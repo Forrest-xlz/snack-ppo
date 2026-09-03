@@ -1,0 +1,25 @@
+mode: train
+device: cpu
+seed: 42
+environment: { width: 5, height: 5, num_envs: 2, rollout_steps: 4 }
+model: { hidden_size: 16 }
+ppo:
+  learning_rate: 0.0003
+  batch_size: 4
+  epochs: 1
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+training: { total_iterations: 1, checkpoint_interval: 1, checkpoint_dir: checkpoints-smoke }
+inference: { model_path: checkpoints-smoke/latest.ot, fps: 10, deterministic: true, cell_size: 36 }
+evaluation: { interval: 1, episodes: 2, deterministic: true, max_steps_per_episode: 10 }
+wandb:
+  enabled: false
+  project: ppo-snake
+  entity: null
+  run_name: smoke
+  mode: offline
+  python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe

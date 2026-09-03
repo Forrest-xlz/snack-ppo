@@ -1,0 +1,48 @@
+mode: train
+device: cpu
+seed: 42
+
+environment:
+  width: 12
+  height: 12
+  num_envs: 1280
+  rollout_steps: 64
+
+model:
+  hidden_size: 256
+
+ppo:
+  learning_rate: 0.0003
+  batch_size: 10240
+  epochs: 1
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  value_coef: 1.0
+  entropy_coef: 0.001
+  max_grad_norm: 0.5
+
+training:
+  total_iterations: 8000
+  checkpoint_interval: 1000
+  checkpoint_dir: checkpoints
+
+inference:
+  model_path: 
+  fps: 30
+  deterministic: true
+  cell_size: 36
+
+evaluation:
+  interval: 250
+  episodes: 512
+  deterministic: true
+  max_steps_per_episode: 5000
+
+wandb:
+  enabled: true
+  project: ppo-snake
+  entity: null
+  run_name: ver_1.0_batch10240_gamma0.99
+  mode: online
+  python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe
