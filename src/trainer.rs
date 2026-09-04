@@ -91,12 +91,50 @@ pub fn evaluation_metric_groups(
     grouped
 }
 
+pub fn recent_metric_groups(
+    snapshot: &crate::metrics::MetricSnapshot,
+    iteration: usize,
+    total_samples: usize,
+) -> BTreeMap<String, f64> {
+    let mut values = Vec::new();
+    if let Some(scores) = snapshot.scores {
+        values.extend([
+            ("mean_episode_score", scores.mean),
+            ("min_episode_score", scores.min as f64),
+            ("max_episode_score", scores.max as f64),
+        ]);
+    }
+    if let Some(transitions) = snapshot.transitions {
+        values.extend([
+            ("policy_loss", transitions.policy_loss),
+            ("value_loss", transitions.value_loss),
+            ("entropy", transitions.entropy),
+            ("total_loss", transitions.total_loss),
+            ("policy_approx_kl", transitions.policy_approx_kl),
+            (
+                "critic_explained_variance",
+                transitions.critic_explained_variance,
+            ),
+        ]);
+    }
+    let mut grouped = BTreeMap::from([
+        ("iteration".to_owned(), iteration as f64),
+        ("total_samples".to_owned(), total_samples as f64),
+    ]);
+    for (name, value) in values {
+        grouped.insert(format!("recent_samples/{name}"), value);
+        grouped.insert(format!("recent_iteration/{name}"), value);
+    }
+    grouped
+}
+
 use anyhow::{bail, Context, Result};
 use tch::{nn, no_grad, Cuda, Device, Tensor};
 
 use crate::{
     config::{Config, DeviceConfig},
     evaluation::evaluate_policy,
+    metrics::MetricWindows,
     model::ActorCritic,
     ppo::PpoTrainer,
     rollout::{collect_rollout, VectorEnv},
@@ -214,6 +252,10 @@ pub fn run_training(config: &Config) -> Result<()> {
     let checkpoint_directory = run_checkpoint_directory(&config.training.checkpoint_dir, &run_name);
     let mut wandb = WandbLogger::start(config, &run_name)?;
     let samples_per_iteration = config.environment.num_envs * config.environment.rollout_steps;
+    let mut metric_windows = MetricWindows::new(
+        config.metrics.score_window_episodes,
+        config.metrics.transition_window_samples,
+    );
     println!("device={device:?} samples_per_iteration={samples_per_iteration}");
 
     for iteration in 1..=config.training.total_iterations {
@@ -225,7 +267,10 @@ pub fn run_training(config: &Config) -> Result<()> {
         let (_, final_values) = no_grad(|| model.forward(&final_tensor));
         let final_values = Vec::<f32>::try_from(&final_values.to_device(Device::Cpu))
             .context("failed to copy bootstrap values to CPU")?;
-        let metrics = optimizer.update(&model, &rollout, &final_values, device)?;
+        let update = optimizer.update(&model, &rollout, &final_values, device)?;
+        let metrics = update.metrics;
+        metric_windows.extend_scores(rollout.episode_scores.iter().copied());
+        metric_windows.extend_transitions(update.transition_metrics);
         let average_score = if rollout.episode_scores.is_empty() {
             0.0
         } else {
@@ -256,6 +301,11 @@ pub fn run_training(config: &Config) -> Result<()> {
             iteration,
             total_samples,
         );
+        logged.extend(recent_metric_groups(
+            &metric_windows.snapshot(),
+            iteration,
+            total_samples,
+        ));
         if iteration % config.evaluation.interval == 0 {
             let evaluation = evaluate_policy(
                 &model,

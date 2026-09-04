@@ -35,6 +35,9 @@ evaluation:
   episodes: 20
   deterministic: true
   max_steps_per_episode: 5000
+metrics:
+  score_window_episodes: 1000
+  transition_window_samples: 65536
 wandb:
   enabled: true
   project: ppo-snake
@@ -56,7 +59,22 @@ fn complete_yaml_deserializes_and_validates() {
     assert_eq!(config.environment.rollout_steps, 256);
     assert_eq!(config.ppo.batch_size, 1024);
     assert_eq!(config.ppo.epochs, 4);
+    assert_eq!(config.metrics.score_window_episodes, 1000);
+    assert_eq!(config.metrics.transition_window_samples, 65536);
     assert!((config.ppo.learning_rate - 0.0003).abs() < f64::EPSILON);
+}
+
+#[test]
+fn zero_metric_window_is_rejected() {
+    let config = parse(&VALID.replace(
+        "transition_window_samples: 65536",
+        "transition_window_samples: 0",
+    ));
+    let error = config.validate().unwrap_err().to_string();
+    assert!(
+        error.contains("metrics.transition_window_samples"),
+        "{error}"
+    );
 }
 
 #[test]

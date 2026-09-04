@@ -1,3 +1,4 @@
+use ppo_snake::metrics::{MetricWindows, TransitionMetric};
 use ppo_snake::{
     config::DeviceConfig,
     model::ActorCritic,
@@ -125,4 +126,47 @@ fn inference_finds_latest_checkpoint_inside_configured_run_folder() {
         resolve_inference_checkpoint(&requested, directory.path(), Some("snake-run")),
         expected
     );
+}
+
+fn transition(value: f64) -> TransitionMetric {
+    TransitionMetric {
+        policy_loss: value,
+        value_loss: value + 1.0,
+        entropy: value + 2.0,
+        total_loss: value + 3.0,
+        policy_approx_kl: value + 4.0,
+        value_target: value + 5.0,
+        value_prediction: value + 4.0,
+    }
+}
+
+#[test]
+fn metric_windows_keep_only_recent_episodes_and_transitions() {
+    let mut windows = MetricWindows::new(3, 4);
+    windows.extend_scores([1, 5]);
+    windows.extend_scores([3, 7]);
+    windows.extend_transitions([transition(1.0), transition(2.0), transition(3.0)]);
+    windows.extend_transitions([transition(4.0), transition(5.0)]);
+
+    let snapshot = windows.snapshot();
+    let scores = snapshot.scores.unwrap();
+    assert_eq!(scores.mean, 5.0);
+    assert_eq!(scores.min, 3);
+    assert_eq!(scores.max, 7);
+    assert_eq!(snapshot.transitions.unwrap().policy_loss, 3.5);
+}
+
+#[test]
+fn recent_metrics_are_duplicated_for_both_axes() {
+    let mut windows = MetricWindows::new(2, 2);
+    windows.extend_scores([2, 6]);
+    windows.extend_transitions([transition(1.0), transition(3.0)]);
+    let metrics = ppo_snake::trainer::recent_metric_groups(&windows.snapshot(), 9, 4096);
+
+    assert_eq!(metrics["recent_samples/mean_episode_score"], 4.0);
+    assert_eq!(metrics["recent_iteration/min_episode_score"], 2.0);
+    assert_eq!(metrics["recent_samples/policy_loss"], 2.0);
+    assert_eq!(metrics["recent_iteration/critic_explained_variance"], 1.0);
+    assert_eq!(metrics["iteration"], 9.0);
+    assert_eq!(metrics["total_samples"], 4096.0);
 }

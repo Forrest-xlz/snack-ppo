@@ -23,6 +23,8 @@ def main():
             run.define_metric("eval_samples/*", step_metric="total_samples")
             run.define_metric("train_iteration/*", step_metric="iteration")
             run.define_metric("eval_iteration/*", step_metric="iteration")
+            run.define_metric("recent_samples/*", step_metric="total_samples")
+            run.define_metric("recent_iteration/*", step_metric="iteration")
         elif kind == "log":
             if run is None:
                 raise RuntimeError("received log before init")

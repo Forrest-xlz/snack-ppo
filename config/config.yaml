@@ -5,7 +5,7 @@ seed: 42
 environment:
   width: 12
   height: 12
-  num_envs: 1280
+  num_envs: 128
   rollout_steps: 64
 
 model:
@@ -13,7 +13,7 @@ model:
 
 ppo:
   learning_rate: 0.0003
-  batch_size: 10240
+  batch_size: 1024
   epochs: 1
   gamma: 0.99
   gae_lambda: 0.95
@@ -23,26 +23,30 @@ ppo:
   max_grad_norm: 0.5
 
 training:
-  total_iterations: 8000
-  checkpoint_interval: 1000
+  total_iterations: 80000
+  checkpoint_interval: 10000
   checkpoint_dir: checkpoints
 
 inference:
-  model_path: 
+  model_path: null
   fps: 30
   deterministic: true
   cell_size: 36
 
 evaluation:
-  interval: 250
+  interval: 4000
   episodes: 512
   deterministic: true
   max_steps_per_episode: 5000
+
+metrics:
+  score_window_episodes: 1024
+  transition_window_samples: 81920 # 1280*64
 
 wandb:
   enabled: true
   project: ppo-snake
   entity: null
-  run_name: ver_1.0_batch10240_gamma0.99
+  run_name: E001_s1
   mode: online
   python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe

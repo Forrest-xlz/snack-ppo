@@ -32,6 +32,7 @@ pub struct Config {
     pub training: TrainingConfig,
     pub inference: InferenceConfig,
     pub evaluation: EvaluationConfig,
+    pub metrics: MetricsConfig,
     pub wandb: WandbConfig,
 }
 
@@ -88,6 +89,13 @@ pub struct EvaluationConfig {
     pub episodes: usize,
     pub deterministic: bool,
     pub max_steps_per_episode: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetricsConfig {
+    pub score_window_episodes: usize,
+    pub transition_window_samples: usize,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -187,6 +195,14 @@ impl Config {
         positive_usize(
             "evaluation.max_steps_per_episode",
             self.evaluation.max_steps_per_episode,
+        )?;
+        positive_usize(
+            "metrics.score_window_episodes",
+            self.metrics.score_window_episodes,
+        )?;
+        positive_usize(
+            "metrics.transition_window_samples",
+            self.metrics.transition_window_samples,
         )?;
         if self.wandb.enabled && self.wandb.project.trim().is_empty() {
             return Err(ConfigError::new(

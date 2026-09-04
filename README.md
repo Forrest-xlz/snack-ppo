@@ -49,7 +49,7 @@ cargo run --release
 
 checkpoint 保存到 `training.checkpoint_dir/run_name/`。例如 `run_name: snake-v1` 会生成 `checkpoints/snake-v1/latest.ot`；`run_name: null` 时自动生成唯一 run 名称。
 
-W&B 使用四组指标：`train_samples/*`、`eval_samples/*` 以累计样本数为横轴，`train_iteration/*`、`eval_iteration/*` 以外层 iteration 为横轴。两套训练组均包含 policy/value/total loss、entropy、训练分数、学习率、critic explained variance 和动作策略 approximate KL；两套评估组均包含 mean/min/max score。
+W&B 保留原有四组指标：`train_samples/*`、`eval_samples/*` 以累计样本数为横轴，`train_iteration/*`、`eval_iteration/*` 以外层 iteration 为横轴。另有 `recent_samples/*` 和 `recent_iteration/*` 两组固定窗口指标，分别使用累计样本数和 iteration 为横轴。窗口大小由 `metrics.score_window_episodes`（最近完成的对局数）和 `metrics.transition_window_samples`（最近唯一 transition 数）配置；不足窗口大小时使用当前已有数据，没有已完成对局时不记录窗口分数。
 
 ## 图形推理
 

@@ -1,8 +1,10 @@
 use ppo_snake::ppo::{
-    approximate_kl, compute_gae, explained_variance, shuffled_minibatches, GaeParams,
+    approximate_kl, compute_gae, explained_variance, shuffled_minibatches, GaeParams, PpoTrainer,
 };
+use ppo_snake::{config::PpoConfig, model::ActorCritic, rollout::RolloutBuffer};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use tch::{nn, Device};
 
 #[test]
 fn compute_gae_masks_terminal_bootstrap() {
@@ -68,4 +70,44 @@ fn action_head_approximate_kl_matches_ppo_formula() {
     let new = [-0.8];
     let expected = (-0.2f64).exp() - 1.0 + 0.2;
     assert!((approximate_kl(&old, &new) - expected).abs() < 1e-8);
+}
+
+#[test]
+fn ppo_update_returns_one_metric_record_per_unique_transition() {
+    let store = nn::VarStore::new(Device::Cpu);
+    let model = ActorCritic::new(&store.root(), 3, 8);
+    let config = PpoConfig {
+        learning_rate: 0.0003,
+        batch_size: 2,
+        epochs: 1,
+        gamma: 0.99,
+        gae_lambda: 0.95,
+        clip_range: 0.2,
+        value_coef: 0.5,
+        entropy_coef: 0.01,
+        max_grad_norm: 0.5,
+    };
+    let mut trainer = PpoTrainer::new(&store, &config, 7).unwrap();
+    let rollout = RolloutBuffer {
+        observations: vec![0.0; 12],
+        actions: vec![0, 1, 2, 3],
+        rewards: vec![0.0, 1.0, 0.0, 0.0],
+        dones: vec![false, false, false, true],
+        values: vec![0.0; 4],
+        log_probs: vec![-1.3862944; 4],
+        episode_scores: vec![1],
+        steps: 2,
+        num_envs: 2,
+        observation_size: 3,
+    };
+
+    let update = trainer
+        .update(&model, &rollout, &[0.0, 0.0], Device::Cpu)
+        .unwrap();
+
+    assert_eq!(update.transition_metrics.len(), rollout.len());
+    assert!(update
+        .transition_metrics
+        .iter()
+        .all(|metric| metric.policy_loss.is_finite()));
 }
