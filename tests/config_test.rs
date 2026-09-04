@@ -42,6 +42,7 @@ wandb:
   enabled: true
   project: ppo-snake
   entity: null
+  group: batch-size-study
   run_name: null
   mode: offline
   python_executable: python
@@ -61,6 +62,7 @@ fn complete_yaml_deserializes_and_validates() {
     assert_eq!(config.ppo.epochs, 4);
     assert_eq!(config.metrics.score_window_episodes, 1000);
     assert_eq!(config.metrics.transition_window_samples, 65536);
+    assert_eq!(config.wandb.group.as_deref(), Some("batch-size-study"));
     assert!((config.ppo.learning_rate - 0.0003).abs() < f64::EPSILON);
 }
 

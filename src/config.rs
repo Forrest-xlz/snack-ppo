@@ -111,6 +111,7 @@ pub struct WandbConfig {
     pub enabled: bool,
     pub project: String,
     pub entity: Option<String>,
+    pub group: Option<String>,
     pub run_name: Option<String>,
     pub mode: WandbMode,
     pub python_executable: PathBuf,

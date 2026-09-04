@@ -25,6 +25,7 @@ struct Message<'a, T: Serialize> {
 struct Init<'a> {
     project: &'a str,
     entity: &'a Option<String>,
+    group: &'a Option<String>,
     run_name: &'a str,
     mode: &'a str,
     config: &'a Config,
@@ -66,6 +67,7 @@ impl WandbLogger {
                 payload: Init {
                     project: &config.wandb.project,
                     entity: &config.wandb.entity,
+                    group: &config.wandb.group,
                     run_name,
                     mode: match config.wandb.mode {
                         WandbMode::Online => "online",
@@ -113,4 +115,33 @@ fn write_json<T: Serialize>(writer: &mut impl Write, value: &T) -> Result<()> {
     writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Init, Message};
+    use crate::config::{Config, WandbMode};
+
+    #[test]
+    fn init_message_includes_wandb_group() {
+        let yaml = include_str!("../config/smoke.yaml").replace("group: null", "group: study");
+        let config: Config = serde_yaml::from_str(&yaml).unwrap();
+        let message = Message {
+            kind: "init",
+            payload: Init {
+                project: &config.wandb.project,
+                entity: &config.wandb.entity,
+                group: &config.wandb.group,
+                run_name: "run-1",
+                mode: match config.wandb.mode {
+                    WandbMode::Online => "online",
+                    WandbMode::Offline => "offline",
+                },
+                config: &config,
+            },
+        };
+
+        let json = serde_json::to_value(message).unwrap();
+        assert_eq!(json["group"], "study");
+    }
 }

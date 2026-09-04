@@ -30,6 +30,7 @@ C:\Users\Liuluotu\Anaconda\anaconda3\python.exe -m pip install "wandb>=0.22.3"
 - `evaluation.max_steps_per_episode`: 单局评估上限，防止循环策略卡住
 - `wandb.mode`: `online` 实时同步或 `offline` 本地保存
 - `wandb.enabled`: 是否启用 W&B；关闭时不需要 Python SDK
+- `wandb.group`: 将多个 run 归入同一个 W&B 实验组；设为 `null` 时不分组
 
 每次采样严格获得：
 

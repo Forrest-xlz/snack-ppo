@@ -21,6 +21,7 @@ wandb:
   enabled: false
   project: ppo-snake
   entity: null
+  group: null
   run_name: smoke
   mode: offline
   python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe

@@ -13,6 +13,7 @@ def main():
             run = wandb.init(
                 project=message["project"],
                 entity=message.get("entity"),
+                group=message.get("group"),
                 name=message.get("run_name"),
                 mode=message["mode"],
                 config=message["config"],

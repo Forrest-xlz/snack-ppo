@@ -19,7 +19,7 @@ ppo:
   gae_lambda: 0.95
   clip_range: 0.2
   value_coef: 1.0
-  entropy_coef: 0.001
+  entropy_coef: 0.005
   max_grad_norm: 0.5
 
 training:
@@ -28,7 +28,7 @@ training:
   checkpoint_dir: checkpoints
 
 inference:
-  model_path: null
+  model_path: checkpoints/E001_/latest.ot
   fps: 30
   deterministic: true
   cell_size: 36
@@ -47,6 +47,7 @@ wandb:
   enabled: true
   project: ppo-snake
   entity: null
-  run_name: E001_s1
+  group: E002
+  run_name: E002_batch1024_entropy0.005
   mode: online
   python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe
