@@ -11,8 +11,7 @@ fn group_c_config_has_sample_based_limits() {
     assert_eq!(config.evaluation.interval_samples, 50_000_000);
     assert_eq!(config.metrics.score_window_episodes, 1024);
     assert!(config.early_stopping.enabled);
-    assert_eq!(config.early_stopping.window_samples, 30_000_000);
-    assert_eq!(config.early_stopping.patience_windows, 3);
+    assert_eq!(config.early_stopping.patience_evaluations, 3);
 }
 
 #[test]
@@ -36,7 +35,7 @@ fn six_configs_hold_baseline_fixed_and_change_only_the_study_axes() {
             "{name}"
         );
         assert_eq!(config.ppo.batch_size, batch, "{name}");
-        assert_eq!(config.early_stopping.window_samples, 30_000_000, "{name}");
+        assert_eq!(config.early_stopping.patience_evaluations, 3, "{name}");
         assert_eq!(
             config.wandb.group.as_deref(),
             Some("E001 batch rollout scale"),
@@ -49,7 +48,7 @@ fn six_configs_hold_baseline_fixed_and_change_only_the_study_axes() {
         );
         assert_eq!(
             config.inference.model_path.to_string_lossy(),
-            format!("checkpoints/E001_batch_rollout_scale_exp-{name}/best.ot"),
+            format!("checkpoints/E001_batch_rollout_scale_exp-{name}/latest.ot"),
             "{name}"
         );
         assert_eq!(config.ppo.learning_rate, 0.0003, "{name}");
@@ -77,11 +76,8 @@ fn six_configs_hold_baseline_fixed_and_change_only_the_study_axes() {
             "{name}"
         );
         assert_eq!(
-            config.early_stopping.window_samples, baseline.early_stopping.window_samples,
-            "{name}"
-        );
-        assert_eq!(
-            config.early_stopping.patience_windows, baseline.early_stopping.patience_windows,
+            config.early_stopping.patience_evaluations,
+            baseline.early_stopping.patience_evaluations,
             "{name}"
         );
     }
@@ -94,11 +90,16 @@ fn iteration_based_fields_are_rejected_and_early_stop_limits_validate() {
         &yaml.replace("max_env_samples: 1200000000", "total_iterations: 8000")
     )
     .is_err());
-    let invalid = yaml.replace("window_samples: 30000000", "window_samples: 0");
+    let invalid = yaml.replace("patience_evaluations: 3", "patience_evaluations: 0");
     let config: Config = serde_yaml::from_str(&invalid).unwrap();
     assert!(config
         .validate()
         .unwrap_err()
         .to_string()
-        .contains("early_stopping.window_samples"));
+        .contains("early_stopping.patience_evaluations"));
+    assert!(serde_yaml::from_str::<Config>(&yaml.replace(
+        "patience_evaluations: 3",
+        "patience_evaluations: 3\n  window_samples: 30000000"
+    ))
+    .is_err());
 }

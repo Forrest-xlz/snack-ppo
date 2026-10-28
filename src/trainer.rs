@@ -116,25 +116,17 @@ pub fn evaluation_metric_groups(
     grouped
 }
 
-pub fn early_stop_metric_groups(
+pub fn eval_stop_metric_groups(
     update: crate::metrics::EarlyStopUpdate,
     total_samples: usize,
 ) -> BTreeMap<String, f64> {
     let mut grouped = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
     for (name, value) in [
-        ("window_samples", update.window_samples as f64),
-        ("completed_episode_count", update.episode_count as f64),
-        ("stale_windows", update.stale_windows as f64),
-        ("improved", f64::from(update.improved)),
-        ("triggered", f64::from(update.should_stop)),
+        ("best_mean_score", update.best_mean_score),
+        ("stale_evaluations", update.stale_evaluations as f64),
+        ("early_stop_triggered", f64::from(update.should_stop)),
     ] {
-        grouped.insert(format!("early_stop_samples/{name}"), value);
-    }
-    if let Some(mean) = update.mean_score {
-        grouped.insert("early_stop_samples/window_mean_score".to_owned(), mean);
-    }
-    if let Some(best) = update.best_mean_score {
-        grouped.insert("early_stop_samples/best_mean_score".to_owned(), best);
+        grouped.insert(format!("eval_samples/{name}"), value);
     }
     grouped
 }
@@ -189,25 +181,6 @@ pub fn save_checkpoint_atomic(
     }
     fs::rename(&latest_temp, &latest).context("failed to install latest checkpoint")?;
     Ok(numbered)
-}
-
-pub fn save_best_checkpoint_atomic(store: &nn::VarStore, directory: &Path) -> Result<PathBuf> {
-    fs::create_dir_all(directory).with_context(|| {
-        format!(
-            "failed to create checkpoint directory {}",
-            directory.display()
-        )
-    })?;
-    let path = directory.join("best.ot");
-    let temporary = directory.join(".best.tmp.ot");
-    store
-        .save(&temporary)
-        .context("failed to write best checkpoint")?;
-    if path.exists() {
-        fs::remove_file(&path).context("failed to replace best checkpoint")?;
-    }
-    fs::rename(&temporary, &path).context("failed to install best checkpoint")?;
-    Ok(path)
 }
 
 pub fn load_checkpoint(store: &mut nn::VarStore, path: &Path) -> Result<()> {
@@ -282,17 +255,12 @@ pub fn run_training(config: &Config) -> Result<()> {
     let mut wandb = WandbLogger::start(config, &run_name)?;
     let samples_per_iteration = config.environment.num_envs * config.environment.rollout_steps;
     let mut score_window = ScoreWindow::new(config.metrics.score_window_episodes);
-    let mut early_stopper = EarlyStopper::new(
-        config.early_stopping.window_samples,
-        config.early_stopping.patience_windows,
-        config.early_stopping.min_episodes,
-    );
+    let mut early_stopper = EarlyStopper::new(config.early_stopping.patience_evaluations);
     let mut sample_window = SampleWindow::default();
     let mut optimizer_steps_total = 0usize;
     let mut next_log_samples = config.metrics.log_interval_samples;
     let mut next_eval_samples = config.evaluation.interval_samples;
     let mut next_checkpoint_samples = config.training.checkpoint_interval_samples;
-    let mut best_checkpoint_saved = false;
     let mut total_samples = 0usize;
     let mut iteration = 0usize;
     let started = Instant::now();
@@ -321,15 +289,10 @@ pub fn run_training(config: &Config) -> Result<()> {
         );
         score_window.extend(rollout.episode_scores.iter().copied());
         total_samples += rollout.len();
-        let early_update = config
-            .early_stopping
-            .enabled
-            .then(|| early_stopper.observe(total_samples, rollout.len(), &rollout.episode_scores))
-            .flatten();
-        let should_stop = early_update.is_some_and(|update| update.should_stop);
         let reached_budget = total_samples >= config.training.max_env_samples;
-        let should_log = total_samples >= next_log_samples || should_stop || reached_budget;
-        let should_evaluate = total_samples >= next_eval_samples || should_stop || reached_budget;
+        let should_log = total_samples >= next_log_samples || reached_budget;
+        let should_evaluate = total_samples >= next_eval_samples || reached_budget;
+        let mut should_stop = false;
         let mut logged = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
         if should_log {
             let now = Instant::now();
@@ -364,21 +327,6 @@ pub fn run_training(config: &Config) -> Result<()> {
                 total_samples,
             );
         }
-        if let Some(update) = early_update {
-            logged.extend(early_stop_metric_groups(update, total_samples));
-            println!(
-                "early_stop_window total_samples={total_samples} episodes={} mean_score={:?} best_score={:?} stale_windows={}",
-                update.episode_count,
-                update.mean_score,
-                update.best_mean_score,
-                update.stale_windows,
-            );
-            if update.improved {
-                let path = save_best_checkpoint_atomic(&store, &checkpoint_directory)?;
-                best_checkpoint_saved = true;
-                println!("best_checkpoint={}", path.display());
-            }
-        }
         if should_evaluate {
             let evaluation =
                 evaluate_policy(&model, config, device, config.seed.wrapping_add(1_000_003))?;
@@ -390,13 +338,22 @@ pub fn run_training(config: &Config) -> Result<()> {
                 evaluation.max_score,
             );
             logged.extend(evaluation_metric_groups(evaluation, total_samples));
+            if config.early_stopping.enabled {
+                let update = early_stopper.observe(evaluation.mean_score);
+                logged.extend(eval_stop_metric_groups(update, total_samples));
+                should_stop = update.should_stop;
+                println!(
+                    "eval_early_stop total_samples={total_samples} best_score={:.3} stale_evaluations={} triggered={}",
+                    update.best_mean_score, update.stale_evaluations, should_stop,
+                );
+            }
             next_eval_samples = advance_sample_threshold(
                 next_eval_samples,
                 config.evaluation.interval_samples,
                 total_samples,
             );
         }
-        if should_log || should_evaluate || early_update.is_some() {
+        if should_log || should_evaluate {
             wandb.log(&logged)?;
         }
         if total_samples >= next_checkpoint_samples || should_stop || reached_budget {
@@ -409,10 +366,6 @@ pub fn run_training(config: &Config) -> Result<()> {
             );
         }
         if should_stop || reached_budget {
-            if !best_checkpoint_saved {
-                let path = save_best_checkpoint_atomic(&store, &checkpoint_directory)?;
-                println!("best_checkpoint={}", path.display());
-            }
             println!(
                 "training_end={} total_samples={total_samples}",
                 if should_stop {

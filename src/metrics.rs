@@ -61,84 +61,42 @@ impl ScoreWindow {
 
 #[derive(Debug, Clone, Copy)]
 pub struct EarlyStopUpdate {
-    pub window_samples: usize,
-    pub episode_count: usize,
-    pub mean_score: Option<f64>,
-    pub best_mean_score: Option<f64>,
-    pub stale_windows: usize,
+    pub best_mean_score: f64,
+    pub stale_evaluations: usize,
     pub improved: bool,
     pub should_stop: bool,
 }
 
 pub struct EarlyStopper {
-    window_samples: usize,
-    patience_windows: usize,
-    min_episodes: usize,
-    next_threshold: usize,
-    collected_samples: usize,
-    episode_count: usize,
-    score_sum: f64,
+    patience_evaluations: usize,
     best_mean_score: Option<f64>,
-    stale_windows: usize,
+    stale_evaluations: usize,
 }
 
 impl EarlyStopper {
-    pub fn new(window_samples: usize, patience_windows: usize, min_episodes: usize) -> Self {
-        assert!(window_samples > 0 && patience_windows > 0 && min_episodes > 0);
+    pub fn new(patience_evaluations: usize) -> Self {
+        assert!(patience_evaluations > 0);
         Self {
-            window_samples,
-            patience_windows,
-            min_episodes,
-            next_threshold: window_samples,
-            collected_samples: 0,
-            episode_count: 0,
-            score_sum: 0.0,
+            patience_evaluations,
             best_mean_score: None,
-            stale_windows: 0,
+            stale_evaluations: 0,
         }
     }
 
-    pub fn observe(
-        &mut self,
-        total_samples: usize,
-        rollout_samples: usize,
-        scores: &[u32],
-    ) -> Option<EarlyStopUpdate> {
-        self.collected_samples += rollout_samples;
-        self.episode_count += scores.len();
-        self.score_sum += scores.iter().map(|&score| score as f64).sum::<f64>();
-        if total_samples < self.next_threshold {
-            return None;
-        }
-        let mean_score = (self.episode_count >= self.min_episodes)
-            .then(|| self.score_sum / self.episode_count as f64);
-        let improved =
-            mean_score.is_some_and(|mean| self.best_mean_score.is_none_or(|best| mean > best));
+    pub fn observe(&mut self, mean_score: f64) -> EarlyStopUpdate {
+        let improved = self.best_mean_score.is_none_or(|best| mean_score > best);
         if improved {
-            self.best_mean_score = mean_score;
-            self.stale_windows = 0;
-        } else if mean_score.is_some() && self.best_mean_score.is_some() {
-            self.stale_windows += 1;
+            self.best_mean_score = Some(mean_score);
+            self.stale_evaluations = 0;
+        } else {
+            self.stale_evaluations += 1;
         }
-        let update = EarlyStopUpdate {
-            window_samples: self.collected_samples,
-            episode_count: self.episode_count,
-            mean_score,
-            best_mean_score: self.best_mean_score,
-            stale_windows: self.stale_windows,
+        EarlyStopUpdate {
+            best_mean_score: self.best_mean_score.unwrap(),
+            stale_evaluations: self.stale_evaluations,
             improved,
-            should_stop: self.stale_windows >= self.patience_windows,
-        };
-        self.collected_samples = 0;
-        self.episode_count = 0;
-        self.score_sum = 0.0;
-        while self.next_threshold <= total_samples {
-            self.next_threshold = self.next_threshold.saturating_add(self.window_samples);
-            if self.next_threshold == usize::MAX {
-                break;
-            }
+            should_stop: self.stale_evaluations >= self.patience_evaluations,
         }
-        Some(update)
     }
 }
 

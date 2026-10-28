@@ -1,5 +1,7 @@
 # Six-Run Sample-Budget Study Implementation Plan
 
+> Superseded on 2026-10-29: early stopping now follows held-out evaluation mean score. The separate sample-window stopping metrics and `best.ot` checkpoint were removed; see README for the current protocol.
+
 > **For agentic workers:** Implement each task with a failing test first.
 
 **Goal:** Prepare six PPO Snake configurations with sample-based budgets, a rolling 1,024-episode training score, and configurable sample-window early stopping.

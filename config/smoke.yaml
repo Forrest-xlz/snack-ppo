@@ -17,7 +17,7 @@ training: { max_env_samples: 8, checkpoint_interval_samples: 8, checkpoint_dir: 
 inference: { model_path: checkpoints-smoke/latest.ot, fps: 10, deterministic: true, cell_size: 36 }
 evaluation: { interval_samples: 8, episodes: 2, deterministic: true, max_steps_per_episode: 10 }
 metrics: { score_window_episodes: 10, log_interval_samples: 8 }
-early_stopping: { enabled: false, window_samples: 8, patience_windows: 2, min_episodes: 1 }
+early_stopping: { enabled: false, patience_evaluations: 2 }
 wandb:
   enabled: false
   project: ppo-snake

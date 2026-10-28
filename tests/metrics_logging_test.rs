@@ -2,7 +2,7 @@ use ppo_snake::evaluation::EvaluationMetrics;
 use ppo_snake::metrics::{EarlyStopper, SampleWindow, ScoreWindow};
 use ppo_snake::ppo::PpoMetrics;
 use ppo_snake::trainer::{
-    advance_sample_threshold, early_stop_metric_groups, evaluation_metric_groups,
+    advance_sample_threshold, eval_stop_metric_groups, evaluation_metric_groups,
     training_metric_groups,
 };
 
@@ -88,11 +88,18 @@ fn sample_schedule_advances_past_large_rollouts_without_drifting() {
 }
 
 #[test]
-fn early_stop_metrics_use_a_separate_group() {
-    let mut stopper = EarlyStopper::new(10, 2, 2);
-    let update = stopper.observe(10, 10, &[2, 6]).unwrap();
-    let logged = early_stop_metric_groups(update, 10);
-    assert_eq!(logged["early_stop_samples/window_mean_score"], 4.0);
-    assert_eq!(logged["early_stop_samples/completed_episode_count"], 2.0);
-    assert!(!logged.keys().any(|key| key.starts_with("recent_samples/")));
+fn eval_stop_metrics_live_with_eval_and_have_no_window_group() {
+    let mut stopper = EarlyStopper::new(2);
+    stopper.observe(4.0);
+    let update = stopper.observe(3.0);
+    let logged = eval_stop_metric_groups(update, 10);
+    assert_eq!(logged["eval_samples/best_mean_score"], 4.0);
+    assert_eq!(logged["eval_samples/stale_evaluations"], 1.0);
+    assert_eq!(logged["eval_samples/early_stop_triggered"], 0.0);
+    assert!(!logged
+        .keys()
+        .any(|key| key.starts_with("early_stop_samples/")));
+    let triggered = eval_stop_metric_groups(stopper.observe(2.0), 20);
+    assert_eq!(triggered["eval_samples/stale_evaluations"], 2.0);
+    assert_eq!(triggered["eval_samples/early_stop_triggered"], 1.0);
 }

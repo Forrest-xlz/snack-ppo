@@ -21,7 +21,6 @@ def main():
             run.define_metric("total_samples")
             run.define_metric("train_samples/*", step_metric="total_samples")
             run.define_metric("eval_samples/*", step_metric="total_samples")
-            run.define_metric("early_stop_samples/*", step_metric="total_samples")
         elif kind == "log":
             if run is None:
                 raise RuntimeError("received log before init")

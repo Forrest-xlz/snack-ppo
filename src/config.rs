@@ -105,9 +105,7 @@ pub struct MetricsConfig {
 #[serde(deny_unknown_fields)]
 pub struct EarlyStoppingConfig {
     pub enabled: bool,
-    pub window_samples: usize,
-    pub patience_windows: usize,
-    pub min_episodes: usize,
+    pub patience_evaluations: usize,
 }
 
 fn default_log_interval_samples() -> usize {
@@ -226,16 +224,8 @@ impl Config {
             self.metrics.log_interval_samples,
         )?;
         positive_usize(
-            "early_stopping.window_samples",
-            self.early_stopping.window_samples,
-        )?;
-        positive_usize(
-            "early_stopping.patience_windows",
-            self.early_stopping.patience_windows,
-        )?;
-        positive_usize(
-            "early_stopping.min_episodes",
-            self.early_stopping.min_episodes,
+            "early_stopping.patience_evaluations",
+            self.early_stopping.patience_evaluations,
         )?;
         if self.wandb.enabled && self.wandb.project.trim().is_empty() {
             return Err(ConfigError::new(

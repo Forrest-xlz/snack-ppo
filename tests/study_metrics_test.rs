@@ -16,34 +16,20 @@ fn rolling_train_score_uses_latest_completed_episodes() {
 }
 
 #[test]
-fn early_stop_requires_patience_after_last_window_record() {
-    let mut stop = EarlyStopper::new(10, 2, 2);
-    assert!(stop.observe(5, 5, &[2]).is_none());
-    let first = stop.observe(10, 5, &[2]).unwrap();
-    assert_eq!(first.mean_score, Some(2.0));
+fn early_stop_counts_only_evaluations_and_resets_after_a_new_high() {
+    let mut stop = EarlyStopper::new(3);
+    let first = stop.observe(10.0);
     assert!(first.improved);
     assert!(!first.should_stop);
-    assert_eq!(stop.observe(20, 10, &[1, 3]).unwrap().stale_windows, 1);
-    let rebound = stop.observe(30, 10, &[4, 4]).unwrap();
+    assert_eq!(stop.observe(9.0).stale_evaluations, 1);
+    assert_eq!(stop.observe(10.0).stale_evaluations, 2);
+    let rebound = stop.observe(11.0);
     assert!(rebound.improved);
-    assert_eq!(rebound.stale_windows, 0);
-    assert_eq!(stop.observe(40, 10, &[4, 4]).unwrap().stale_windows, 1);
-    let final_window = stop.observe(50, 10, &[3, 3]).unwrap();
-    assert!(final_window.should_stop);
-    assert_eq!(final_window.stale_windows, 2);
-}
-
-#[test]
-fn early_stop_does_not_count_windows_with_too_few_episodes() {
-    let mut stop = EarlyStopper::new(10, 2, 2);
-    let empty = stop.observe(10, 10, &[]).unwrap();
-    assert_eq!(empty.mean_score, None);
-    assert_eq!(empty.stale_windows, 0);
-    assert_eq!(
-        stop.observe(20, 10, &[3, 5]).unwrap().best_mean_score,
-        Some(4.0)
-    );
-    let thin = stop.observe(30, 10, &[0]).unwrap();
-    assert_eq!(thin.mean_score, None);
-    assert_eq!(thin.stale_windows, 0);
+    assert_eq!(rebound.stale_evaluations, 0);
+    assert_eq!(rebound.best_mean_score, 11.0);
+    assert_eq!(stop.observe(11.0).stale_evaluations, 1);
+    assert_eq!(stop.observe(10.0).stale_evaluations, 2);
+    let third_stale_eval = stop.observe(9.0);
+    assert!(third_stale_eval.should_stop);
+    assert_eq!(third_stale_eval.stale_evaluations, 3);
 }

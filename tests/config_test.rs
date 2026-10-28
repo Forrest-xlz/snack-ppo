@@ -50,9 +50,7 @@ metrics:
   log_interval_samples: 500000
 early_stopping:
   enabled: true
-  window_samples: 50000000
-  patience_windows: 3
-  min_episodes: 256
+  patience_evaluations: 3
 wandb:
   enabled: true
   project: ppo-snake

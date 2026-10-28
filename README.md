@@ -29,9 +29,9 @@ All six ready-to-run configurations are in [config/experiments/batch_rollout](co
 cargo run --release -- --config config/experiments/batch_rollout/C.yaml
 ```
 
-The configured early-stopping rule uses non-overlapping windows of **30M environment samples**. At each completed window, it computes the mean score over games that ended during that window. A window with fewer than **256** completed games is logged but does not change the stopping state. A new highest valid window mean resets the counter; **three consecutive valid windows without a new high** stop training. There is no score ceiling or minimum-improvement threshold. At most, training ends at the 1,200M sample cap; reaching that cap does not establish a performance plateau. The rule is an experimental heuristic, and its response to late rebounds still needs validation with the new runs.
+Early stopping now follows the deterministic evaluation mean score. Evaluation runs every **50M environment samples** on the same **512 held-out seeds**, starting at `seed + 1,000,003`; the training environments start at `seed` and use at most 1,280 distinct initial seeds in this study. Each new strict high resets the counter; **three consecutive evaluations without a new high** stop training. The 1,200M sample cap remains the maximum. This rule is an experimental heuristic and may miss a later rebound; an early stop does not establish a performance ceiling.
 
-The best early-stopping window saves `checkpoints/<safe_run_name>/best.ot` (for example, `checkpoints/E001_batch_rollout_scale_exp-C/best.ot`). Periodic and final checkpoints save `samples-<total_samples>.ot` and `latest.ot`. Evaluation uses 512 deterministic episodes with the same evaluation seeds at every checkpoint and across groups, capped at 5,000 steps per episode. Both evaluation and regular checkpoints are scheduled every 50M environment samples.
+Periodic and final checkpoints save `checkpoints/<safe_run_name>/samples-<total_samples>.ot` and `latest.ot` (for example, `checkpoints/E001_batch_rollout_scale_exp-C/latest.ot`). No checkpoint is selected as the best model. Evaluation uses 512 deterministic episodes with the same evaluation seeds at every checkpoint and across groups, capped at 5,000 steps per episode. Both evaluation and regular checkpoints are scheduled every 50M environment samples.
 
 ## W&B metrics
 
@@ -39,8 +39,7 @@ The six runs share W&B group `E001 batch rollout scale`, with run names `E001 ba
 
 - `train_samples/mean_episode_score`, `std_episode_score`, `min_episode_score`, and `max_episode_score` describe the **most recent 1,024 completed games**. This is a rolling episode window. Before the first completed game, these fields are omitted. `score_window_episode_count` shows how many games currently fill the window.
 - Other `train_samples/*` diagnostics are pooled or sample-weighted over the roughly **1M environment samples since the previous upload**. `completed_episode_count` counts games completed during that upload interval, while `window_samples` reports its actual size. These counts do not define the rolling score window.
-- `early_stop_samples/window_mean_score`, `best_mean_score`, `completed_episode_count`, and `stale_windows` show the separate 30M-sample stopping windows. `improved` and `triggered` are 0/1 flags.
-- `eval_samples/mean_score`, `std_score`, `min_score`, and `max_score` describe the fixed-seed evaluation episodes.
+- `eval_samples/mean_score`, `std_score`, `min_score`, and `max_score` describe the fixed-seed evaluation episodes. `best_mean_score`, `stale_evaluations`, and `early_stop_triggered` show the evaluation-based stopping state. There is no separate `early_stop_samples/*` window group.
 
 PPO diagnostics include positive policy `entropy` (not entropy loss), `policy_loss`, `value_loss`, `total_loss`, `critic_explained_variance`, `policy_approx_kl`, and `clip_fraction`. The `raw_adv_mean/std` values are GAE advantages **before** normalization; `return_mean/std` describe the value targets. `reverse_action_rate` counts requested reverse actions, which the environment ignores. Cumulative optimizer steps, wall time, and sample throughput help compare compute costs. Approximate KL and clip fraction are measured before each mini-batch optimizer step; they are not full-rollout post-update diagnostics.
 

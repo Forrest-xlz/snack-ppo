@@ -28,4 +28,5 @@ fn sample_cap_stops_after_the_rollout_that_crosses_it() {
         .join("smoke")
         .join("samples-8.ot")
         .is_file());
+    assert!(!directory.path().join("smoke").join("best.ot").exists());
 }

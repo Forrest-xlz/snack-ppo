@@ -28,7 +28,7 @@ training:
   checkpoint_dir: checkpoints
 
 inference:
-  model_path: checkpoints/E001_batch_rollout_scale_exp-A/best.ot
+  model_path: checkpoints/E001_batch_rollout_scale_exp-A/latest.ot
   fps: 30
   deterministic: true
   cell_size: 36
@@ -45,9 +45,7 @@ metrics:
 
 early_stopping:
   enabled: true
-  window_samples: 30000000
-  patience_windows: 3
-  min_episodes: 256
+  patience_evaluations: 3
 
 wandb:
   enabled: true
