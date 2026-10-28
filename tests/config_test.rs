@@ -32,7 +32,7 @@ ppo:
   entropy_coef: 0.01
   max_grad_norm: 0.5
 training:
-  max_env_samples: 800000000
+  max_env_samples: 1200000000
   checkpoint_interval_samples: 50000000
   checkpoint_dir: checkpoints
 inference:

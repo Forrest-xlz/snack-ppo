@@ -4,7 +4,7 @@ This project uses a small Snake game to study scaling behavior in reinforcement 
 
 ## Planned six-run study
 
-All runs use training seed 42, 64 rollout steps per environment, a hidden size of 256, one PPO epoch, and a fixed learning rate of `3e-4`. Shared settings are `gamma=0.99`, `gae_lambda=0.95`, `clip_range=0.2`, `value_coef=1`, `entropy_coef=0.001`, and `max_grad_norm=0.5`. Each run has an **800M environment-sample cap** and the same early-stopping rule. Results will be added after the new runs finish.
+All runs use training seed 42, 64 rollout steps per environment, a hidden size of 256, one PPO epoch, and a fixed learning rate of `3e-4`. Shared settings are `gamma=0.99`, `gae_lambda=0.95`, `clip_range=0.2`, `value_coef=1`, `entropy_coef=0.001`, and `max_grad_norm=0.5`. Each run has a **1,200M environment-sample cap** and the same early-stopping rule. Results will be added after the new runs finish.
 
 `R = num_envs × rollout_steps` is the amount collected for one PPO update; `b = ppo.batch_size` is the optimization mini-batch size.
 
@@ -29,7 +29,7 @@ All six ready-to-run configurations are in [config/experiments/batch_rollout](co
 cargo run --release -- --config config/experiments/batch_rollout/C.yaml
 ```
 
-The configured early-stopping rule uses non-overlapping windows of **30M environment samples**. At each completed window, it computes the mean score over games that ended during that window. A window with fewer than **256** completed games is logged but does not change the stopping state. A new highest valid window mean resets the counter; **three consecutive valid windows without a new high** stop training. There is no score ceiling or minimum-improvement threshold. At most, training ends at the 800M sample cap; reaching that cap does not establish a performance plateau. The rule is an experimental heuristic, and its response to late rebounds still needs validation with the new runs.
+The configured early-stopping rule uses non-overlapping windows of **30M environment samples**. At each completed window, it computes the mean score over games that ended during that window. A window with fewer than **256** completed games is logged but does not change the stopping state. A new highest valid window mean resets the counter; **three consecutive valid windows without a new high** stop training. There is no score ceiling or minimum-improvement threshold. At most, training ends at the 1,200M sample cap; reaching that cap does not establish a performance plateau. The rule is an experimental heuristic, and its response to late rebounds still needs validation with the new runs.
 
 The best early-stopping window saves `checkpoints/<safe_run_name>/best.ot` (for example, `checkpoints/E001_batch_rollout_scale_exp-C/best.ot`). Periodic and final checkpoints save `samples-<total_samples>.ot` and `latest.ot`. Evaluation uses 512 deterministic episodes with the same evaluation seeds at every checkpoint and across groups, capped at 5,000 steps per episode. Both evaluation and regular checkpoints are scheduled every 50M environment samples.
 

@@ -6,7 +6,7 @@ fn group_c_config_has_sample_based_limits() {
     assert_eq!(config.environment.num_envs, 1280);
     assert_eq!(config.environment.rollout_steps, 64);
     assert_eq!(config.ppo.batch_size, 10_240);
-    assert_eq!(config.training.max_env_samples, 800_000_000);
+    assert_eq!(config.training.max_env_samples, 1_200_000_000);
     assert_eq!(config.training.checkpoint_interval_samples, 50_000_000);
     assert_eq!(config.evaluation.interval_samples, 50_000_000);
     assert_eq!(config.metrics.score_window_episodes, 1024);
@@ -54,7 +54,7 @@ fn six_configs_hold_baseline_fixed_and_change_only_the_study_axes() {
         );
         assert_eq!(config.ppo.learning_rate, 0.0003, "{name}");
         assert_eq!(config.seed, 42, "{name}");
-        assert_eq!(config.training.max_env_samples, 800_000_000, "{name}");
+        assert_eq!(config.training.max_env_samples, 1_200_000_000, "{name}");
         assert_eq!(
             config.model.hidden_size, baseline.model.hidden_size,
             "{name}"
@@ -91,7 +91,7 @@ fn six_configs_hold_baseline_fixed_and_change_only_the_study_axes() {
 fn iteration_based_fields_are_rejected_and_early_stop_limits_validate() {
     let yaml = include_str!("../config/experiments/batch_rollout/C.yaml");
     assert!(serde_yaml::from_str::<Config>(
-        &yaml.replace("max_env_samples: 800000000", "total_iterations: 8000")
+        &yaml.replace("max_env_samples: 1200000000", "total_iterations: 8000")
     )
     .is_err());
     let invalid = yaml.replace("window_samples: 30000000", "window_samples: 0");
