@@ -68,12 +68,12 @@ fn action_head_approximate_kl_is_zero_for_unchanged_policy() {
 fn action_head_approximate_kl_matches_ppo_formula() {
     let old = [-1.0];
     let new = [-0.8];
-    let expected = (-0.2f64).exp() - 1.0 + 0.2;
+    let expected = 0.2f64.exp() - 1.0 - 0.2;
     assert!((approximate_kl(&old, &new) - expected).abs() < 1e-8);
 }
 
 #[test]
-fn ppo_update_returns_one_metric_record_per_unique_transition() {
+fn ppo_update_reports_finite_diagnostics() {
     let store = nn::VarStore::new(Device::Cpu);
     let model = ActorCritic::new(&store.root(), 3, 8);
     let config = PpoConfig {
@@ -96,6 +96,7 @@ fn ppo_update_returns_one_metric_record_per_unique_transition() {
         values: vec![0.0; 4],
         log_probs: vec![-1.3862944; 4],
         episode_scores: vec![1],
+        reverse_action_count: 0,
         steps: 2,
         num_envs: 2,
         observation_size: 3,
@@ -105,9 +106,9 @@ fn ppo_update_returns_one_metric_record_per_unique_transition() {
         .update(&model, &rollout, &[0.0, 0.0], Device::Cpu)
         .unwrap();
 
-    assert_eq!(update.transition_metrics.len(), rollout.len());
-    assert!(update
-        .transition_metrics
-        .iter()
-        .all(|metric| metric.policy_loss.is_finite()));
+    assert!(update.metrics.policy_loss.is_finite());
+    assert_eq!(update.metrics.optimizer_steps, 2);
+    assert!(update.metrics.raw_adv_std.is_finite());
+    assert!(update.metrics.return_std.is_finite());
+    assert!((0.0..=1.0).contains(&update.metrics.clip_fraction));
 }

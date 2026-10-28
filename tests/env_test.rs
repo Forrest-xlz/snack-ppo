@@ -2,6 +2,13 @@ use std::collections::VecDeque;
 
 use ppo_snake::env::{Action, Direction, Point, SnakeEnv};
 
+#[test]
+fn initial_left_request_is_counted_as_a_reverse_action() {
+    let env = SnakeEnv::new(5, 5, 1).unwrap();
+    assert!(env.would_reverse(Action::Left));
+    assert!(!env.would_reverse(Action::Up));
+}
+
 fn env_with(
     snake: &[(usize, usize)],
     direction: Direction,

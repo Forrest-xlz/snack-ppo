@@ -1,0 +1,59 @@
+mode: train
+device: cpu
+seed: 42
+
+environment:
+  width: 12
+  height: 12
+  num_envs: 320
+  rollout_steps: 64
+
+model:
+  hidden_size: 256
+
+ppo:
+  learning_rate: 0.0003
+  batch_size: 10240
+  epochs: 1
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  value_coef: 1.0
+  entropy_coef: 0.001
+  max_grad_norm: 0.5
+
+training:
+  max_env_samples: 800000000
+  checkpoint_interval_samples: 50000000
+  checkpoint_dir: checkpoints
+
+inference:
+  model_path: checkpoints/E001_batch_rollout_scale_exp-F/best.ot
+  fps: 30
+  deterministic: true
+  cell_size: 36
+
+evaluation:
+  interval_samples: 50000000
+  episodes: 512
+  deterministic: true
+  max_steps_per_episode: 5000
+
+metrics:
+  score_window_episodes: 1024
+  log_interval_samples: 1000000
+
+early_stopping:
+  enabled: true
+  window_samples: 30000000
+  patience_windows: 3
+  min_episodes: 256
+
+wandb:
+  enabled: true
+  project: ppo-snake
+  entity: null
+  group: "E001 batch rollout scale"
+  run_name: "E001 batch rollout scale exp-F"
+  mode: online
+  python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe

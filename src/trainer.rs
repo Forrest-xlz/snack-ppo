@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub fn sanitize_run_name(run_name: &str) -> String {
@@ -33,97 +33,108 @@ pub fn generated_run_name() -> String {
     format!("run-{seconds}")
 }
 
+pub fn advance_sample_threshold(next: usize, interval: usize, total_samples: usize) -> usize {
+    if total_samples < next {
+        return next;
+    }
+    let intervals_crossed = (total_samples - next) / interval + 1;
+    next.saturating_add(intervals_crossed.saturating_mul(interval))
+}
+
 pub fn run_checkpoint_directory(base: &Path, run_name: &str) -> PathBuf {
     base.join(sanitize_run_name(run_name))
 }
 
 pub fn training_metric_groups(
-    metrics: crate::ppo::PpoMetrics,
-    average_score: f64,
-    max_score: u32,
-    learning_rate: f64,
-    iteration: usize,
+    snapshot: &crate::metrics::SampleWindowSnapshot,
+    scores: Option<crate::metrics::ScoreWindowMetrics>,
     total_samples: usize,
+    optimizer_steps_total: usize,
+    wall_time_seconds: f64,
+    samples_per_second: f64,
 ) -> BTreeMap<String, f64> {
+    let metrics = snapshot.ppo;
     let values = [
         ("policy_loss", metrics.policy_loss),
         ("value_loss", metrics.value_loss),
         ("entropy", metrics.entropy),
         ("total_loss", metrics.total_loss),
-        ("mean_episode_score", average_score),
-        ("max_episode_score", max_score as f64),
-        ("learning_rate", learning_rate),
+        ("completed_episode_count", snapshot.episode_count as f64),
+        ("window_samples", snapshot.samples as f64),
+        ("reverse_action_rate", snapshot.reverse_action_rate),
+        ("optimizer_steps_total", optimizer_steps_total as f64),
+        ("wall_time_seconds", wall_time_seconds),
+        ("samples_per_second", samples_per_second),
+        ("raw_adv_mean", metrics.raw_adv_mean),
+        ("raw_adv_std", metrics.raw_adv_std),
+        ("return_mean", metrics.return_mean),
+        ("return_std", metrics.return_std),
+        ("clip_fraction", metrics.clip_fraction),
         (
             "critic_explained_variance",
             metrics.critic_explained_variance,
         ),
         ("policy_approx_kl", metrics.policy_approx_kl),
     ];
-    let mut grouped = BTreeMap::from([
-        ("iteration".to_owned(), iteration as f64),
-        ("total_samples".to_owned(), total_samples as f64),
-    ]);
+    let mut grouped = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
     for (name, value) in values {
         grouped.insert(format!("train_samples/{name}"), value);
-        grouped.insert(format!("train_iteration/{name}"), value);
+    }
+    if let Some(scores) = scores {
+        grouped.insert("train_samples/mean_episode_score".to_owned(), scores.mean);
+        grouped.insert("train_samples/std_episode_score".to_owned(), scores.std);
+        grouped.insert(
+            "train_samples/min_episode_score".to_owned(),
+            scores.min as f64,
+        );
+        grouped.insert(
+            "train_samples/max_episode_score".to_owned(),
+            scores.max as f64,
+        );
+        grouped.insert(
+            "train_samples/score_window_episode_count".to_owned(),
+            scores.count as f64,
+        );
     }
     grouped
 }
 
 pub fn evaluation_metric_groups(
     metrics: crate::evaluation::EvaluationMetrics,
-    iteration: usize,
     total_samples: usize,
 ) -> BTreeMap<String, f64> {
     let values = [
         ("mean_score", metrics.mean_score),
+        ("std_score", metrics.std_score),
         ("min_score", metrics.min_score as f64),
         ("max_score", metrics.max_score as f64),
     ];
-    let mut grouped = BTreeMap::from([
-        ("iteration".to_owned(), iteration as f64),
-        ("total_samples".to_owned(), total_samples as f64),
-    ]);
+    let mut grouped = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
     for (name, value) in values {
         grouped.insert(format!("eval_samples/{name}"), value);
-        grouped.insert(format!("eval_iteration/{name}"), value);
     }
     grouped
 }
 
-pub fn recent_metric_groups(
-    snapshot: &crate::metrics::MetricSnapshot,
-    iteration: usize,
+pub fn early_stop_metric_groups(
+    update: crate::metrics::EarlyStopUpdate,
     total_samples: usize,
 ) -> BTreeMap<String, f64> {
-    let mut values = Vec::new();
-    if let Some(scores) = snapshot.scores {
-        values.extend([
-            ("mean_episode_score", scores.mean),
-            ("min_episode_score", scores.min as f64),
-            ("max_episode_score", scores.max as f64),
-        ]);
+    let mut grouped = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
+    for (name, value) in [
+        ("window_samples", update.window_samples as f64),
+        ("completed_episode_count", update.episode_count as f64),
+        ("stale_windows", update.stale_windows as f64),
+        ("improved", f64::from(update.improved)),
+        ("triggered", f64::from(update.should_stop)),
+    ] {
+        grouped.insert(format!("early_stop_samples/{name}"), value);
     }
-    if let Some(transitions) = snapshot.transitions {
-        values.extend([
-            ("policy_loss", transitions.policy_loss),
-            ("value_loss", transitions.value_loss),
-            ("entropy", transitions.entropy),
-            ("total_loss", transitions.total_loss),
-            ("policy_approx_kl", transitions.policy_approx_kl),
-            (
-                "critic_explained_variance",
-                transitions.critic_explained_variance,
-            ),
-        ]);
+    if let Some(mean) = update.mean_score {
+        grouped.insert("early_stop_samples/window_mean_score".to_owned(), mean);
     }
-    let mut grouped = BTreeMap::from([
-        ("iteration".to_owned(), iteration as f64),
-        ("total_samples".to_owned(), total_samples as f64),
-    ]);
-    for (name, value) in values {
-        grouped.insert(format!("recent_samples/{name}"), value);
-        grouped.insert(format!("recent_iteration/{name}"), value);
+    if let Some(best) = update.best_mean_score {
+        grouped.insert("early_stop_samples/best_mean_score".to_owned(), best);
     }
     grouped
 }
@@ -134,7 +145,7 @@ use tch::{nn, no_grad, Cuda, Device, Tensor};
 use crate::{
     config::{Config, DeviceConfig},
     evaluation::evaluate_policy,
-    metrics::MetricWindows,
+    metrics::{EarlyStopper, SampleWindow, ScoreWindow},
     model::ActorCritic,
     ppo::PpoTrainer,
     rollout::{collect_rollout, VectorEnv},
@@ -154,7 +165,7 @@ pub fn resolve_device(config: DeviceConfig) -> Result<Device> {
 pub fn save_checkpoint_atomic(
     store: &nn::VarStore,
     directory: &Path,
-    iteration: usize,
+    total_samples: usize,
 ) -> Result<PathBuf> {
     fs::create_dir_all(directory).with_context(|| {
         format!(
@@ -162,8 +173,8 @@ pub fn save_checkpoint_atomic(
             directory.display()
         )
     })?;
-    let numbered = directory.join(format!("iteration-{iteration}.ot"));
-    let numbered_temp = directory.join(format!(".iteration-{iteration}.tmp.ot"));
+    let numbered = directory.join(format!("samples-{total_samples}.ot"));
+    let numbered_temp = directory.join(format!(".samples-{total_samples}.tmp.ot"));
     store
         .save(&numbered_temp)
         .context("failed to write checkpoint temporary file")?;
@@ -178,6 +189,25 @@ pub fn save_checkpoint_atomic(
     }
     fs::rename(&latest_temp, &latest).context("failed to install latest checkpoint")?;
     Ok(numbered)
+}
+
+pub fn save_best_checkpoint_atomic(store: &nn::VarStore, directory: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(directory).with_context(|| {
+        format!(
+            "failed to create checkpoint directory {}",
+            directory.display()
+        )
+    })?;
+    let path = directory.join("best.ot");
+    let temporary = directory.join(".best.tmp.ot");
+    store
+        .save(&temporary)
+        .context("failed to write best checkpoint")?;
+    if path.exists() {
+        fs::remove_file(&path).context("failed to replace best checkpoint")?;
+    }
+    fs::rename(&temporary, &path).context("failed to install best checkpoint")?;
+    Ok(path)
 }
 
 pub fn load_checkpoint(store: &mut nn::VarStore, path: &Path) -> Result<()> {
@@ -246,19 +276,31 @@ pub fn run_training(config: &Config) -> Result<()> {
     let run_name = config
         .wandb
         .run_name
-        .as_deref()
-        .map(sanitize_run_name)
+        .clone()
         .unwrap_or_else(generated_run_name);
     let checkpoint_directory = run_checkpoint_directory(&config.training.checkpoint_dir, &run_name);
     let mut wandb = WandbLogger::start(config, &run_name)?;
     let samples_per_iteration = config.environment.num_envs * config.environment.rollout_steps;
-    let mut metric_windows = MetricWindows::new(
-        config.metrics.score_window_episodes,
-        config.metrics.transition_window_samples,
+    let mut score_window = ScoreWindow::new(config.metrics.score_window_episodes);
+    let mut early_stopper = EarlyStopper::new(
+        config.early_stopping.window_samples,
+        config.early_stopping.patience_windows,
+        config.early_stopping.min_episodes,
     );
+    let mut sample_window = SampleWindow::default();
+    let mut optimizer_steps_total = 0usize;
+    let mut next_log_samples = config.metrics.log_interval_samples;
+    let mut next_eval_samples = config.evaluation.interval_samples;
+    let mut next_checkpoint_samples = config.training.checkpoint_interval_samples;
+    let mut best_checkpoint_saved = false;
+    let mut total_samples = 0usize;
+    let mut iteration = 0usize;
+    let started = Instant::now();
+    let mut last_log_time = started;
     println!("device={device:?} samples_per_iteration={samples_per_iteration}");
 
-    for iteration in 1..=config.training.total_iterations {
+    while total_samples < config.training.max_env_samples {
+        iteration += 1;
         let rollout = collect_rollout(&model, &mut envs, config.environment.rollout_steps, device)?;
         let final_observations = envs.observations();
         let final_tensor = Tensor::from_slice(&final_observations)
@@ -269,50 +311,77 @@ pub fn run_training(config: &Config) -> Result<()> {
             .context("failed to copy bootstrap values to CPU")?;
         let update = optimizer.update(&model, &rollout, &final_values, device)?;
         let metrics = update.metrics;
-        metric_windows.extend_scores(rollout.episode_scores.iter().copied());
-        metric_windows.extend_transitions(update.transition_metrics);
-        let average_score = if rollout.episode_scores.is_empty() {
-            0.0
-        } else {
-            rollout
-                .episode_scores
-                .iter()
-                .map(|&score| score as f64)
-                .sum::<f64>()
-                / rollout.episode_scores.len() as f64
-        };
-        let max_score = rollout.episode_scores.iter().copied().max().unwrap_or(0);
-        println!(
-            "iteration={iteration} total_samples={} batch_samples={} avg_score={average_score:.3} max_score={max_score} policy_loss={:.5} value_loss={:.5} entropy={:.5} explained_variance={:.5} approx_kl={:.6}",
-            iteration * samples_per_iteration,
+        optimizer_steps_total += metrics.optimizer_steps;
+        sample_window.push(
             rollout.len(),
-            metrics.policy_loss,
-            metrics.value_loss,
-            metrics.entropy,
-            metrics.critic_explained_variance,
-            metrics.policy_approx_kl,
-        );
-        let total_samples = iteration * samples_per_iteration;
-        let mut logged = training_metric_groups(
+            &rollout.episode_scores,
+            rollout.reverse_action_count,
             metrics,
-            average_score,
-            max_score,
-            config.ppo.learning_rate,
-            iteration,
-            total_samples,
+            metrics.optimizer_steps,
         );
-        logged.extend(recent_metric_groups(
-            &metric_windows.snapshot(),
-            iteration,
-            total_samples,
-        ));
-        if iteration % config.evaluation.interval == 0 {
-            let evaluation = evaluate_policy(
-                &model,
-                config,
-                device,
-                config.seed.wrapping_add(iteration as u64 * 1_000_003),
-            )?;
+        score_window.extend(rollout.episode_scores.iter().copied());
+        total_samples += rollout.len();
+        let early_update = config
+            .early_stopping
+            .enabled
+            .then(|| early_stopper.observe(total_samples, rollout.len(), &rollout.episode_scores))
+            .flatten();
+        let should_stop = early_update.is_some_and(|update| update.should_stop);
+        let reached_budget = total_samples >= config.training.max_env_samples;
+        let should_log = total_samples >= next_log_samples || should_stop || reached_budget;
+        let should_evaluate = total_samples >= next_eval_samples || should_stop || reached_budget;
+        let mut logged = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
+        if should_log {
+            let now = Instant::now();
+            let elapsed = (now - last_log_time).as_secs_f64().max(f64::EPSILON);
+            let snapshot = sample_window.snapshot();
+            logged.extend(training_metric_groups(
+                &snapshot,
+                score_window.snapshot(),
+                total_samples,
+                optimizer_steps_total,
+                (now - started).as_secs_f64(),
+                snapshot.samples as f64 / elapsed,
+            ));
+            logged.insert(
+                "train_samples/learning_rate".to_owned(),
+                config.ppo.learning_rate,
+            );
+            println!(
+                "iteration={iteration} total_samples={total_samples} window_samples={} episodes={} rolling_score={:?} value_loss={:.5} entropy={:.5} approx_kl={:.6}",
+                snapshot.samples,
+                snapshot.episode_count,
+                score_window.snapshot().map(|scores| scores.mean),
+                snapshot.ppo.value_loss,
+                snapshot.ppo.entropy,
+                snapshot.ppo.policy_approx_kl,
+            );
+            sample_window.clear();
+            last_log_time = now;
+            next_log_samples = advance_sample_threshold(
+                next_log_samples,
+                config.metrics.log_interval_samples,
+                total_samples,
+            );
+        }
+        if let Some(update) = early_update {
+            logged.extend(early_stop_metric_groups(update, total_samples));
+            println!(
+                "early_stop_window total_samples={total_samples} episodes={} mean_score={:?} best_score={:?} stale_windows={}",
+                update.episode_count,
+                update.mean_score,
+                update.best_mean_score,
+                update.stale_windows,
+            );
+            if update.improved {
+                let path = save_best_checkpoint_atomic(&store, &checkpoint_directory)?;
+                best_checkpoint_saved = true;
+                println!("best_checkpoint={}", path.display());
+            }
+        }
+        if should_evaluate {
+            let evaluation =
+                evaluate_policy(&model, config, device, config.seed.wrapping_add(1_000_003))?;
             println!(
                 "evaluation iteration={iteration} episodes={} mean_score={:.3} min_score={} max_score={}",
                 config.evaluation.episodes,
@@ -320,18 +389,39 @@ pub fn run_training(config: &Config) -> Result<()> {
                 evaluation.min_score,
                 evaluation.max_score,
             );
-            logged.extend(evaluation_metric_groups(
-                evaluation,
-                iteration,
+            logged.extend(evaluation_metric_groups(evaluation, total_samples));
+            next_eval_samples = advance_sample_threshold(
+                next_eval_samples,
+                config.evaluation.interval_samples,
                 total_samples,
-            ));
+            );
         }
-        wandb.log(&logged)?;
-        if iteration % config.training.checkpoint_interval == 0
-            || iteration == config.training.total_iterations
-        {
-            let path = save_checkpoint_atomic(&store, &checkpoint_directory, iteration)?;
+        if should_log || should_evaluate || early_update.is_some() {
+            wandb.log(&logged)?;
+        }
+        if total_samples >= next_checkpoint_samples || should_stop || reached_budget {
+            let path = save_checkpoint_atomic(&store, &checkpoint_directory, total_samples)?;
             println!("checkpoint={}", path.display());
+            next_checkpoint_samples = advance_sample_threshold(
+                next_checkpoint_samples,
+                config.training.checkpoint_interval_samples,
+                total_samples,
+            );
+        }
+        if should_stop || reached_budget {
+            if !best_checkpoint_saved {
+                let path = save_best_checkpoint_atomic(&store, &checkpoint_directory)?;
+                println!("best_checkpoint={}", path.display());
+            }
+            println!(
+                "training_end={} total_samples={total_samples}",
+                if should_stop {
+                    "early_stop"
+                } else {
+                    "sample_budget"
+                }
+            );
+            break;
         }
     }
     wandb.finish()?;

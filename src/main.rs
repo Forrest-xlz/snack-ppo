@@ -13,7 +13,11 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let config = Config::load_default()?;
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let config = match args.as_slice() {
+        [flag, path] if flag == "--config" => Config::load(path)?,
+        _ => anyhow::bail!("usage: ppo-snake --config PATH"),
+    };
     match config.mode {
         Mode::Train => run_training(&config),
         Mode::Infer => run_inference(config),

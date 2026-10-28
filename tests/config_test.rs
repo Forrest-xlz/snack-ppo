@@ -1,5 +1,15 @@
 use ppo_snake::config::Config;
 
+#[test]
+fn sample_intervals_are_required_and_validate_positive_values() {
+    let config: Config = serde_yaml::from_str(VALID).unwrap();
+    assert_eq!(config.evaluation.interval_samples, 32_768_000);
+    assert_eq!(config.metrics.log_interval_samples, 500_000);
+    let invalid = VALID.replace("interval_samples: 32768000", "interval_samples: 0");
+    let invalid: Config = serde_yaml::from_str(&invalid).unwrap();
+    assert!(invalid.validate().is_err());
+}
+
 const VALID: &str = r#"
 mode: train
 device: cpu
@@ -22,8 +32,8 @@ ppo:
   entropy_coef: 0.01
   max_grad_norm: 0.5
 training:
-  total_iterations: 5000
-  checkpoint_interval: 100
+  max_env_samples: 800000000
+  checkpoint_interval_samples: 50000000
   checkpoint_dir: checkpoints
 inference:
   model_path: checkpoints/latest.pt
@@ -31,13 +41,18 @@ inference:
   deterministic: true
   cell_size: 36
 evaluation:
-  interval: 50
+  interval_samples: 32768000
   episodes: 20
   deterministic: true
   max_steps_per_episode: 5000
 metrics:
   score_window_episodes: 1000
-  transition_window_samples: 65536
+  log_interval_samples: 500000
+early_stopping:
+  enabled: true
+  window_samples: 50000000
+  patience_windows: 3
+  min_episodes: 256
 wandb:
   enabled: true
   project: ppo-snake
@@ -61,22 +76,16 @@ fn complete_yaml_deserializes_and_validates() {
     assert_eq!(config.ppo.batch_size, 1024);
     assert_eq!(config.ppo.epochs, 4);
     assert_eq!(config.metrics.score_window_episodes, 1000);
-    assert_eq!(config.metrics.transition_window_samples, 65536);
+    assert_eq!(config.metrics.log_interval_samples, 500000);
     assert_eq!(config.wandb.group.as_deref(), Some("batch-size-study"));
     assert!((config.ppo.learning_rate - 0.0003).abs() < f64::EPSILON);
 }
 
 #[test]
 fn zero_metric_window_is_rejected() {
-    let config = parse(&VALID.replace(
-        "transition_window_samples: 65536",
-        "transition_window_samples: 0",
-    ));
+    let config = parse(&VALID.replace("log_interval_samples: 500000", "log_interval_samples: 0"));
     let error = config.validate().unwrap_err().to_string();
-    assert!(
-        error.contains("metrics.transition_window_samples"),
-        "{error}"
-    );
+    assert!(error.contains("metrics.log_interval_samples"), "{error}");
 }
 
 #[test]
@@ -116,7 +125,7 @@ fn board_too_small_for_initial_snake_is_rejected() {
 
 #[test]
 fn zero_evaluation_interval_is_rejected() {
-    let config = parse(&VALID.replace("interval: 50", "interval: 0"));
+    let config = parse(&VALID.replace("interval_samples: 32768000", "interval_samples: 0"));
     let error = config.validate().unwrap_err().to_string();
-    assert!(error.contains("evaluation.interval"), "{error}");
+    assert!(error.contains("evaluation.interval_samples"), "{error}");
 }

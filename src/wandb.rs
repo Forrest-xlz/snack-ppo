@@ -132,7 +132,7 @@ mod tests {
                 project: &config.wandb.project,
                 entity: &config.wandb.entity,
                 group: &config.wandb.group,
-                run_name: "run-1",
+                run_name: "E001 batch rollout scale exp-C",
                 mode: match config.wandb.mode {
                     WandbMode::Online => "online",
                     WandbMode::Offline => "offline",
@@ -143,5 +143,6 @@ mod tests {
 
         let json = serde_json::to_value(message).unwrap();
         assert_eq!(json["group"], "study");
+        assert_eq!(json["run_name"], "E001 batch rollout scale exp-C");
     }
 }

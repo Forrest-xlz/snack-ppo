@@ -3,9 +3,7 @@ use rand::{seq::SliceRandom, Rng};
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 use tch::{nn, nn::OptimizerConfig, Device, Kind, Tensor};
 
-use crate::{
-    config::PpoConfig, metrics::TransitionMetric, model::ActorCritic, rollout::RolloutBuffer,
-};
+use crate::{config::PpoConfig, model::ActorCritic, rollout::RolloutBuffer};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GaeParams {
@@ -88,7 +86,7 @@ pub fn approximate_kl(old_log_probs: &[f64], new_log_probs: &[f64]) -> f64 {
         .zip(new_log_probs)
         .map(|(&old, &new)| {
             let log_ratio = new - old;
-            (-log_ratio).exp() - 1.0 + log_ratio
+            log_ratio.exp() - 1.0 - log_ratio
         })
         .sum::<f64>()
         / old_log_probs.len() as f64
@@ -112,11 +110,16 @@ pub struct PpoMetrics {
     pub total_loss: f64,
     pub critic_explained_variance: f64,
     pub policy_approx_kl: f64,
+    pub raw_adv_mean: f64,
+    pub raw_adv_std: f64,
+    pub return_mean: f64,
+    pub return_std: f64,
+    pub clip_fraction: f64,
+    pub optimizer_steps: usize,
 }
 
 pub struct PpoUpdate {
     pub metrics: PpoMetrics,
-    pub transition_metrics: Vec<TransitionMetric>,
 }
 
 pub struct PpoTrainer {
@@ -163,13 +166,20 @@ impl PpoTrainer {
         let old_log_probs = Tensor::from_slice(&rollout.log_probs).to_device(device);
         let returns = Tensor::from_slice(&returns).to_device(device);
         let advantages = Tensor::from_slice(&advantages).to_device(device);
+        let raw_adv_mean = advantages.mean(Kind::Float).double_value(&[]);
+        let raw_adv_std = advantages.std(false).double_value(&[]);
+        let return_mean = returns.mean(Kind::Float).double_value(&[]);
+        let return_std = returns.std(false).double_value(&[]);
         let advantages =
             (&advantages - advantages.mean(Kind::Float)) / (advantages.std(false) + 1e-8);
 
         let mut metrics = PpoMetrics::default();
-        let mut transition_metrics = vec![TransitionMetric::default(); sample_count];
+        metrics.raw_adv_mean = raw_adv_mean;
+        metrics.raw_adv_std = raw_adv_std;
+        metrics.return_mean = return_mean;
+        metrics.return_std = return_std;
         let mut updates = 0usize;
-        for epoch in 0..self.config.epochs {
+        for _ in 0..self.config.epochs {
             for batch in shuffled_minibatches(sample_count, self.config.batch_size, &mut self.rng) {
                 let indices = Tensor::from_slice(
                     &batch.iter().map(|value| *value as i64).collect::<Vec<_>>(),
@@ -184,8 +194,13 @@ impl PpoTrainer {
 
                 let log_ratio = &evaluation.log_probs - batch_old_log_probs;
                 let ratio = log_ratio.exp();
-                let approximate_kls = (-&log_ratio).exp() - 1.0 + &log_ratio;
+                let approximate_kls = log_ratio.exp() - 1.0 - &log_ratio;
                 let approximate_kl = approximate_kls.mean(Kind::Float);
+                let clip_fraction = (&ratio - 1.0)
+                    .abs()
+                    .gt(self.config.clip_range)
+                    .to_kind(Kind::Float)
+                    .mean(Kind::Float);
                 let surrogate = &ratio * &batch_advantages;
                 let clipped = ratio
                     .clamp(1.0 - self.config.clip_range, 1.0 + self.config.clip_range)
@@ -199,33 +214,6 @@ impl PpoTrainer {
                     - self.config.entropy_coef * &evaluation.entropy;
                 let total_loss = total_losses.mean(Kind::Float);
 
-                if epoch + 1 == self.config.epochs {
-                    let per_sample = Tensor::stack(
-                        &[
-                            policy_losses,
-                            value_losses,
-                            evaluation.entropy.shallow_clone(),
-                            total_losses,
-                            approximate_kls,
-                            batch_returns.shallow_clone(),
-                            evaluation.values.shallow_clone(),
-                        ],
-                        1,
-                    )
-                    .to_device(Device::Cpu);
-                    let per_sample = Vec::<Vec<f32>>::try_from(&per_sample)?;
-                    for (&original_index, values) in batch.iter().zip(per_sample) {
-                        transition_metrics[original_index] = TransitionMetric {
-                            policy_loss: values[0] as f64,
-                            value_loss: values[1] as f64,
-                            entropy: values[2] as f64,
-                            total_loss: values[3] as f64,
-                            policy_approx_kl: values[4] as f64,
-                            value_target: values[5] as f64,
-                            value_prediction: values[6] as f64,
-                        };
-                    }
-                }
                 self.optimizer
                     .backward_step_clip(&total_loss, self.config.max_grad_norm);
 
@@ -234,6 +222,7 @@ impl PpoTrainer {
                 metrics.entropy += entropy.double_value(&[]);
                 metrics.total_loss += total_loss.double_value(&[]);
                 metrics.policy_approx_kl += approximate_kl.double_value(&[]);
+                metrics.clip_fraction += clip_fraction.double_value(&[]) * batch.len() as f64;
                 updates += 1;
             }
         }
@@ -243,10 +232,9 @@ impl PpoTrainer {
         metrics.entropy /= divisor;
         metrics.total_loss /= divisor;
         metrics.policy_approx_kl /= divisor;
+        metrics.clip_fraction /= (sample_count * self.config.epochs) as f64;
         metrics.critic_explained_variance = critic_explained_variance;
-        Ok(PpoUpdate {
-            metrics,
-            transition_metrics,
-        })
+        metrics.optimizer_steps = updates;
+        Ok(PpoUpdate { metrics })
     }
 }

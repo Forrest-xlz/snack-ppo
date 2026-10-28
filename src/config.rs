@@ -1,10 +1,11 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-pub const DEFAULT_CONFIG_PATH: &str = "config/config.yaml";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -33,6 +34,7 @@ pub struct Config {
     pub inference: InferenceConfig,
     pub evaluation: EvaluationConfig,
     pub metrics: MetricsConfig,
+    pub early_stopping: EarlyStoppingConfig,
     pub wandb: WandbConfig,
 }
 
@@ -68,8 +70,8 @@ pub struct PpoConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrainingConfig {
-    pub total_iterations: usize,
-    pub checkpoint_interval: usize,
+    pub max_env_samples: usize,
+    pub checkpoint_interval_samples: usize,
     pub checkpoint_dir: PathBuf,
 }
 
@@ -85,7 +87,7 @@ pub struct InferenceConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct EvaluationConfig {
-    pub interval: usize,
+    pub interval_samples: usize,
     pub episodes: usize,
     pub deterministic: bool,
     pub max_steps_per_episode: usize,
@@ -95,7 +97,21 @@ pub struct EvaluationConfig {
 #[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     pub score_window_episodes: usize,
-    pub transition_window_samples: usize,
+    #[serde(default = "default_log_interval_samples")]
+    pub log_interval_samples: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EarlyStoppingConfig {
+    pub enabled: bool,
+    pub window_samples: usize,
+    pub patience_windows: usize,
+    pub min_episodes: usize,
+}
+
+fn default_log_interval_samples() -> usize {
+    1_000_000
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -131,11 +147,12 @@ impl ConfigError {
 }
 
 impl Config {
-    pub fn load_default() -> Result<Self> {
-        let yaml = fs::read_to_string(DEFAULT_CONFIG_PATH)
-            .with_context(|| format!("failed to read {DEFAULT_CONFIG_PATH}"))?;
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let yaml = fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
         let config: Self = serde_yaml::from_str(&yaml)
-            .with_context(|| format!("failed to parse {DEFAULT_CONFIG_PATH}"))?;
+            .with_context(|| format!("failed to parse {}", path.display()))?;
         config.validate()?;
         Ok(config)
     }
@@ -168,10 +185,10 @@ impl Config {
         non_negative("ppo.value_coef", self.ppo.value_coef)?;
         non_negative("ppo.entropy_coef", self.ppo.entropy_coef)?;
         positive_f64("ppo.max_grad_norm", self.ppo.max_grad_norm)?;
-        positive_usize("training.total_iterations", self.training.total_iterations)?;
+        positive_usize("training.max_env_samples", self.training.max_env_samples)?;
         positive_usize(
-            "training.checkpoint_interval",
-            self.training.checkpoint_interval,
+            "training.checkpoint_interval_samples",
+            self.training.checkpoint_interval_samples,
         )?;
         if self.training.checkpoint_dir.as_os_str().is_empty() {
             return Err(ConfigError::new(
@@ -191,7 +208,10 @@ impl Config {
         if self.inference.cell_size == 0 {
             return Err(ConfigError::new("inference.cell_size", "must be positive"));
         }
-        positive_usize("evaluation.interval", self.evaluation.interval)?;
+        positive_usize(
+            "evaluation.interval_samples",
+            self.evaluation.interval_samples,
+        )?;
         positive_usize("evaluation.episodes", self.evaluation.episodes)?;
         positive_usize(
             "evaluation.max_steps_per_episode",
@@ -202,8 +222,20 @@ impl Config {
             self.metrics.score_window_episodes,
         )?;
         positive_usize(
-            "metrics.transition_window_samples",
-            self.metrics.transition_window_samples,
+            "metrics.log_interval_samples",
+            self.metrics.log_interval_samples,
+        )?;
+        positive_usize(
+            "early_stopping.window_samples",
+            self.early_stopping.window_samples,
+        )?;
+        positive_usize(
+            "early_stopping.patience_windows",
+            self.early_stopping.patience_windows,
+        )?;
+        positive_usize(
+            "early_stopping.min_episodes",
+            self.early_stopping.min_episodes,
         )?;
         if self.wandb.enabled && self.wandb.project.trim().is_empty() {
             return Err(ConfigError::new(

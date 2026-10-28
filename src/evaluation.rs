@@ -10,6 +10,7 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub struct EvaluationMetrics {
     pub mean_score: f64,
+    pub std_score: f64,
     pub min_score: u32,
     pub max_score: u32,
 }
@@ -55,8 +56,17 @@ fn evaluate_with(
         scores.push(env.score());
     }
     let sum = scores.iter().map(|&score| score as f64).sum::<f64>();
+    let mean_score = sum / scores.len() as f64;
     Ok(EvaluationMetrics {
-        mean_score: sum / scores.len() as f64,
+        mean_score,
+        std_score: (scores
+            .iter()
+            .map(|&score| (score as f64).powi(2))
+            .sum::<f64>()
+            / scores.len() as f64
+            - mean_score.powi(2))
+        .max(0.0)
+        .sqrt(),
         min_score: scores.iter().copied().min().unwrap_or(0),
         max_score: scores.iter().copied().max().unwrap_or(0),
     })

@@ -12,6 +12,7 @@ pub struct EnvTransition {
     pub reward: f32,
     pub done: bool,
     pub terminal_score: Option<u32>,
+    pub reversed_action: bool,
 }
 
 pub struct VectorEnv {
@@ -56,7 +57,9 @@ impl VectorEnv {
             .par_iter_mut()
             .zip(actions.par_iter())
             .map(|(env, &action)| {
-                let result = env.step(Action::from_index(action)?);
+                let action = Action::from_index(action)?;
+                let reversed_action = env.would_reverse(action);
+                let result = env.step(action);
                 let terminal_score = result.done.then_some(result.score);
                 if result.done {
                     env.reset();
@@ -65,6 +68,7 @@ impl VectorEnv {
                     reward: result.reward,
                     done: result.done,
                     terminal_score,
+                    reversed_action,
                 })
             })
             .collect()
@@ -79,6 +83,7 @@ pub struct RolloutBuffer {
     pub values: Vec<f32>,
     pub log_probs: Vec<f32>,
     pub episode_scores: Vec<u32>,
+    pub reverse_action_count: usize,
     pub steps: usize,
     pub num_envs: usize,
     pub observation_size: usize,
@@ -108,6 +113,7 @@ pub fn collect_rollout(
         values: Vec::with_capacity(count),
         log_probs: Vec::with_capacity(count),
         episode_scores: Vec::new(),
+        reverse_action_count: 0,
         steps: rollout_steps,
         num_envs: envs.len(),
         observation_size: envs.observation_size(),
@@ -132,6 +138,7 @@ pub fn collect_rollout(
         buffer.values.extend(values);
         buffer.log_probs.extend(log_probs);
         for transition in transitions {
+            buffer.reverse_action_count += usize::from(transition.reversed_action);
             buffer.rewards.push(transition.reward);
             buffer.dones.push(transition.done);
             if let Some(score) = transition.terminal_score {

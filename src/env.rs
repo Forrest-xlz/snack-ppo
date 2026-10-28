@@ -214,6 +214,9 @@ impl SnakeEnv {
     pub fn direction(&self) -> Direction {
         self.direction
     }
+    pub fn would_reverse(&self, action: Action) -> bool {
+        is_opposite(self.direction, Direction::from(action))
+    }
     pub fn food(&self) -> Option<Point> {
         self.food
     }
