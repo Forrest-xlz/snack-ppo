@@ -8,10 +8,11 @@ fn group_c_config_has_sample_based_limits() {
     assert_eq!(config.ppo.batch_size, 10_240);
     assert_eq!(config.training.max_env_samples, 1_200_000_000);
     assert_eq!(config.training.checkpoint_interval_samples, 50_000_000);
-    assert_eq!(config.evaluation.interval_samples, 50_000_000);
+    assert_eq!(config.evaluation.interval_samples, 25_000_000);
+    assert_eq!(config.evaluation.episodes, 1024);
     assert_eq!(config.metrics.score_window_episodes, 1024);
     assert!(config.early_stopping.enabled);
-    assert_eq!(config.early_stopping.patience_evaluations, 3);
+    assert_eq!(config.early_stopping.patience_evaluations, 12);
 }
 
 #[test]
@@ -35,7 +36,9 @@ fn six_configs_hold_baseline_fixed_and_change_only_the_study_axes() {
             "{name}"
         );
         assert_eq!(config.ppo.batch_size, batch, "{name}");
-        assert_eq!(config.early_stopping.patience_evaluations, 3, "{name}");
+        assert_eq!(config.early_stopping.patience_evaluations, 12, "{name}");
+        assert_eq!(config.evaluation.interval_samples, 25_000_000, "{name}");
+        assert_eq!(config.evaluation.episodes, 1024, "{name}");
         assert_eq!(
             config.wandb.group.as_deref(),
             Some("E001 batch rollout scale"),
@@ -90,7 +93,7 @@ fn iteration_based_fields_are_rejected_and_early_stop_limits_validate() {
         &yaml.replace("max_env_samples: 1200000000", "total_iterations: 8000")
     )
     .is_err());
-    let invalid = yaml.replace("patience_evaluations: 3", "patience_evaluations: 0");
+    let invalid = yaml.replace("patience_evaluations: 12", "patience_evaluations: 0");
     let config: Config = serde_yaml::from_str(&invalid).unwrap();
     assert!(config
         .validate()
@@ -98,8 +101,8 @@ fn iteration_based_fields_are_rejected_and_early_stop_limits_validate() {
         .to_string()
         .contains("early_stopping.patience_evaluations"));
     assert!(serde_yaml::from_str::<Config>(&yaml.replace(
-        "patience_evaluations: 3",
-        "patience_evaluations: 3\n  window_samples: 30000000"
+        "patience_evaluations: 12",
+        "patience_evaluations: 12\n  window_samples: 30000000"
     ))
     .is_err());
 }

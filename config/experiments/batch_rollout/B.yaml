@@ -34,8 +34,8 @@ inference:
   cell_size: 36
 
 evaluation:
-  interval_samples: 50000000
-  episodes: 512
+  interval_samples: 25000000
+  episodes: 1024
   deterministic: true
   max_steps_per_episode: 5000
 
@@ -45,7 +45,7 @@ metrics:
 
 early_stopping:
   enabled: true
-  patience_evaluations: 3
+  patience_evaluations: 12
 
 wandb:
   enabled: true
