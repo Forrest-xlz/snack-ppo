@@ -14,15 +14,15 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $binary = Join-Path $repoRoot 'target/release/ppo-snake.exe'
 $points = @(
-    @{ Source = 'A'; Stage = 'Early'; Time = 100; Targets = @('A', 'B', 'C') },
-    @{ Source = 'A'; Stage = 'Middle'; Time = 300; Targets = @('A', 'B', 'C') },
-    @{ Source = 'A'; Stage = 'Late'; Time = 550; Targets = @('A', 'B', 'C') },
-    @{ Source = 'B'; Stage = 'Early'; Time = 200; Targets = @('B', 'C') },
-    @{ Source = 'B'; Stage = 'Middle'; Time = 500; Targets = @('B', 'C') },
-    @{ Source = 'B'; Stage = 'Late'; Time = 850; Targets = @('B', 'C') },
-    @{ Source = 'C'; Stage = 'Early'; Time = 150; Targets = @('C', 'B') },
-    @{ Source = 'C'; Stage = 'Middle'; Time = 450; Targets = @('C', 'B') },
-    @{ Source = 'C'; Stage = 'Late'; Time = 850; Targets = @('C', 'B') }
+    @{ Source = 'A'; Stage = 'Early'; Time = 100; Targets = @('B', 'C') },
+    @{ Source = 'A'; Stage = 'Middle'; Time = 300; Targets = @('B', 'C') },
+    @{ Source = 'A'; Stage = 'Late'; Time = 550; Targets = @('B', 'C') },
+    @{ Source = 'B'; Stage = 'Early'; Time = 200; Targets = @('C') },
+    @{ Source = 'B'; Stage = 'Middle'; Time = 500; Targets = @('C') },
+    @{ Source = 'B'; Stage = 'Late'; Time = 850; Targets = @('C') },
+    @{ Source = 'C'; Stage = 'Early'; Time = 150; Targets = @('B') },
+    @{ Source = 'C'; Stage = 'Middle'; Time = 450; Targets = @('B') },
+    @{ Source = 'C'; Stage = 'Late'; Time = 850; Targets = @('B') }
 )
 $experiments = @(
     foreach ($point in $points) {

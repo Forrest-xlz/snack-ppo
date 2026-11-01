@@ -1,17 +1,17 @@
 use ppo_snake::config::Config;
 
 #[test]
-fn switching_and_restart_controls_share_sources_and_change_only_target_scale() {
+fn switches_share_sources_and_change_only_target_scale() {
     let sources = [
-        ("A", 100, 100_001_792, vec!["A", "B", "C"]),
-        ("A", 300, 300_001_280, vec!["A", "B", "C"]),
-        ("A", 550, 550_000_640, vec!["A", "B", "C"]),
-        ("B", 200, 200_007_680, vec!["B", "C"]),
-        ("B", 500, 500_006_912, vec!["B", "C"]),
-        ("B", 850, 850_001_920, vec!["B", "C"]),
-        ("C", 150, 150_077_440, vec!["B", "C"]),
-        ("C", 450, 450_068_480, vec!["B", "C"]),
-        ("C", 850, 850_001_920, vec!["B", "C"]),
+        ("A", 100, 100_001_792, vec!["B", "C"]),
+        ("A", 300, 300_001_280, vec!["B", "C"]),
+        ("A", 550, 550_000_640, vec!["B", "C"]),
+        ("B", 200, 200_007_680, vec!["C"]),
+        ("B", 500, 500_006_912, vec!["C"]),
+        ("B", 850, 850_001_920, vec!["C"]),
+        ("C", 150, 150_077_440, vec!["B"]),
+        ("C", 450, 450_068_480, vec!["B"]),
+        ("C", 850, 850_001_920, vec!["B"]),
     ];
     let mut controls = 0;
     let mut switches = 0;
@@ -74,6 +74,14 @@ fn switching_and_restart_controls_share_sources_and_change_only_target_scale() {
             }
         }
     }
-    assert_eq!(controls, 9);
+    assert_eq!(controls, 0);
+    assert_eq!(
+        std::fs::read_dir("config/experiments/batch_rollout_switch")
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "yaml"))
+            .count(),
+        12
+    );
     assert_eq!(switches, 12);
 }

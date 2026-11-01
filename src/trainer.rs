@@ -278,8 +278,8 @@ pub fn run_training(config: &Config) -> Result<()> {
             source.display()
         );
     }
-    // Only model tensors are loaded above. All branches, including unchanged
-    // scale controls, start with a new Adam optimizer and fresh rollout state.
+    // Only model tensors are loaded above. Every initialized branch starts
+    // with a new Adam optimizer and fresh rollout state.
     let mut optimizer = PpoTrainer::new(&store, &config.ppo, config.seed)?;
     let mut envs = VectorEnv::new(&config.environment, config.seed)?;
     let mut wandb = WandbLogger::start(config, &run_name)?;
