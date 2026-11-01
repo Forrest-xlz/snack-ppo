@@ -1,0 +1,59 @@
+mode: train
+device: cpu
+seed: 42
+
+environment:
+  width: 12
+  height: 12
+  num_envs: 128
+  rollout_steps: 64
+
+model:
+  hidden_size: 256
+
+ppo:
+  learning_rate: 0.0003
+  batch_size: 1024
+  epochs: 1
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  value_coef: 1.0
+  entropy_coef: 0.001
+  max_grad_norm: 0.5
+
+training:
+  max_env_samples: 300000000
+  checkpoint_interval_samples: 50000000
+  checkpoint_dir: checkpoints
+  init_checkpoint: checkpoints/E001_batch_rollout_scale_exp-B/samples-500006912.ot
+  pretrained_env_samples: 500006912
+
+inference:
+  model_path: checkpoints/E003_batch_rollout_switch_B-500M-to-B/latest.ot
+  fps: 30
+  deterministic: true
+  cell_size: 36
+
+evaluation:
+  interval_samples: 25000000
+  episodes: 1024
+  deterministic: true
+  max_steps_per_episode: 5000
+
+metrics:
+  score_window_episodes: 1024
+  log_interval_samples: 1000000
+
+early_stopping:
+  enabled: true
+  patience_evaluations: 12
+
+wandb:
+  enabled: true
+  project: ppo-snake
+  entity: null
+  group: "E003 batch rollout switch"
+  run_name: "E003 batch rollout switch B-500M-to-B"
+  mode: online
+  python_executable: C:/Users/Liuluotu/Anaconda/anaconda3/python.exe

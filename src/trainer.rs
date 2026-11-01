@@ -241,17 +241,47 @@ pub fn resolve_inference_checkpoint(
 pub fn run_training(config: &Config) -> Result<()> {
     let device = resolve_device(config.device)?;
     tch::manual_seed(config.seed as i64);
-    let store = nn::VarStore::new(device);
+    let mut store = nn::VarStore::new(device);
     let input_size = (3 * config.environment.width * config.environment.height) as i64;
     let model = ActorCritic::new(&store.root(), input_size, config.model.hidden_size);
-    let mut optimizer = PpoTrainer::new(&store, &config.ppo, config.seed)?;
-    let mut envs = VectorEnv::new(&config.environment, config.seed)?;
     let run_name = config
         .wandb
         .run_name
         .clone()
         .unwrap_or_else(generated_run_name);
     let checkpoint_directory = run_checkpoint_directory(&config.training.checkpoint_dir, &run_name);
+    if let Some(source) = &config.training.init_checkpoint {
+        let source_path = fs::canonicalize(source).with_context(|| {
+            format!(
+                "failed to find initialization checkpoint {}",
+                source.display()
+            )
+        })?;
+        anyhow::ensure!(
+            source_path.is_file(),
+            "initialization checkpoint must be a file"
+        );
+        fs::create_dir_all(&checkpoint_directory)?;
+        let output_path = fs::canonicalize(&checkpoint_directory)?;
+        anyhow::ensure!(
+            !source_path.starts_with(&output_path),
+            "output directory must not contain the initialization checkpoint"
+        );
+        load_checkpoint(&mut store, &source_path).with_context(|| {
+            format!(
+                "failed to load initialization checkpoint {}",
+                source.display()
+            )
+        })?;
+        println!(
+            "initialization_checkpoint={} optimizer_state=reset",
+            source.display()
+        );
+    }
+    // Only model tensors are loaded above. All branches, including unchanged
+    // scale controls, start with a new Adam optimizer and fresh rollout state.
+    let mut optimizer = PpoTrainer::new(&store, &config.ppo, config.seed)?;
+    let mut envs = VectorEnv::new(&config.environment, config.seed)?;
     let mut wandb = WandbLogger::start(config, &run_name)?;
     let samples_per_iteration = config.environment.num_envs * config.environment.rollout_steps;
     let mut score_window = ScoreWindow::new(config.metrics.score_window_episodes);
@@ -261,13 +291,33 @@ pub fn run_training(config: &Config) -> Result<()> {
     let mut next_log_samples = config.metrics.log_interval_samples;
     let mut next_eval_samples = config.evaluation.interval_samples;
     let mut next_checkpoint_samples = config.training.checkpoint_interval_samples;
-    let mut total_samples = 0usize;
+    let pretrained_samples = config.training.pretrained_env_samples;
+    let mut finetune_samples = 0usize;
+    let mut total_samples = pretrained_samples;
     let mut iteration = 0usize;
     let started = Instant::now();
     let mut last_log_time = started;
     println!("device={device:?} samples_per_iteration={samples_per_iteration}");
 
-    while total_samples < config.training.max_env_samples {
+    if config.training.init_checkpoint.is_some() {
+        let evaluation =
+            evaluate_policy(&model, config, device, config.seed.wrapping_add(1_000_003))?;
+        println!(
+            "initial_evaluation total_samples={total_samples} finetune_samples=0 mean_score={:.3}",
+            evaluation.mean_score
+        );
+        let mut logged = evaluation_metric_groups(evaluation, total_samples);
+        logged.insert("finetune_samples".to_owned(), 0.0);
+        if config.early_stopping.enabled {
+            logged.extend(eval_stop_metric_groups(
+                early_stopper.observe(evaluation.mean_score),
+                total_samples,
+            ));
+        }
+        wandb.log(&logged)?;
+    }
+
+    while finetune_samples < config.training.max_env_samples {
         iteration += 1;
         let rollout = collect_rollout(&model, &mut envs, config.environment.rollout_steps, device)?;
         let final_observations = envs.observations();
@@ -288,12 +338,16 @@ pub fn run_training(config: &Config) -> Result<()> {
             metrics.optimizer_steps,
         );
         score_window.extend(rollout.episode_scores.iter().copied());
-        total_samples += rollout.len();
-        let reached_budget = total_samples >= config.training.max_env_samples;
-        let should_log = total_samples >= next_log_samples || reached_budget;
-        let should_evaluate = total_samples >= next_eval_samples || reached_budget;
+        finetune_samples += rollout.len();
+        total_samples = pretrained_samples + finetune_samples;
+        let reached_budget = finetune_samples >= config.training.max_env_samples;
+        let should_log = finetune_samples >= next_log_samples || reached_budget;
+        let should_evaluate = finetune_samples >= next_eval_samples || reached_budget;
         let mut should_stop = false;
         let mut logged = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
+        if config.training.init_checkpoint.is_some() {
+            logged.insert("finetune_samples".to_owned(), finetune_samples as f64);
+        }
         if should_log {
             let now = Instant::now();
             let elapsed = (now - last_log_time).as_secs_f64().max(f64::EPSILON);
@@ -311,7 +365,7 @@ pub fn run_training(config: &Config) -> Result<()> {
                 config.ppo.learning_rate,
             );
             println!(
-                "iteration={iteration} total_samples={total_samples} window_samples={} episodes={} rolling_score={:?} value_loss={:.5} entropy={:.5} approx_kl={:.6}",
+                "iteration={iteration} total_samples={total_samples} finetune_samples={finetune_samples} window_samples={} episodes={} rolling_score={:?} value_loss={:.5} entropy={:.5} approx_kl={:.6}",
                 snapshot.samples,
                 snapshot.episode_count,
                 score_window.snapshot().map(|scores| scores.mean),
@@ -324,7 +378,7 @@ pub fn run_training(config: &Config) -> Result<()> {
             next_log_samples = advance_sample_threshold(
                 next_log_samples,
                 config.metrics.log_interval_samples,
-                total_samples,
+                finetune_samples,
             );
         }
         if should_evaluate {
@@ -350,24 +404,24 @@ pub fn run_training(config: &Config) -> Result<()> {
             next_eval_samples = advance_sample_threshold(
                 next_eval_samples,
                 config.evaluation.interval_samples,
-                total_samples,
+                finetune_samples,
             );
         }
         if should_log || should_evaluate {
             wandb.log(&logged)?;
         }
-        if total_samples >= next_checkpoint_samples || should_stop || reached_budget {
+        if finetune_samples >= next_checkpoint_samples || should_stop || reached_budget {
             let path = save_checkpoint_atomic(&store, &checkpoint_directory, total_samples)?;
             println!("checkpoint={}", path.display());
             next_checkpoint_samples = advance_sample_threshold(
                 next_checkpoint_samples,
                 config.training.checkpoint_interval_samples,
-                total_samples,
+                finetune_samples,
             );
         }
         if should_stop || reached_budget {
             println!(
-                "training_end={} total_samples={total_samples}",
+                "training_end={} total_samples={total_samples} finetune_samples={finetune_samples}",
                 if should_stop {
                     "early_stop"
                 } else {

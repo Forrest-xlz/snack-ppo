@@ -73,6 +73,12 @@ pub struct TrainingConfig {
     pub max_env_samples: usize,
     pub checkpoint_interval_samples: usize,
     pub checkpoint_dir: PathBuf,
+    /// Optional weights-only initialization; Adam is always created fresh.
+    #[serde(default)]
+    pub init_checkpoint: Option<PathBuf>,
+    /// Samples already used to train the initialization checkpoint.
+    #[serde(default)]
+    pub pretrained_env_samples: usize,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -184,6 +190,34 @@ impl Config {
         non_negative("ppo.entropy_coef", self.ppo.entropy_coef)?;
         positive_f64("ppo.max_grad_norm", self.ppo.max_grad_norm)?;
         positive_usize("training.max_env_samples", self.training.max_env_samples)?;
+        if self.training.pretrained_env_samples > 0 && self.training.init_checkpoint.is_none() {
+            return Err(ConfigError::new(
+                "training.init_checkpoint",
+                "is required when pretrained_env_samples is nonzero",
+            ));
+        }
+        if self
+            .training
+            .init_checkpoint
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::new(
+                "training.init_checkpoint",
+                "must not be empty",
+            ));
+        }
+        if self
+            .training
+            .pretrained_env_samples
+            .checked_add(self.training.max_env_samples)
+            .is_none()
+        {
+            return Err(ConfigError::new(
+                "training.pretrained_env_samples",
+                "plus max_env_samples must fit in the sample counter",
+            ));
+        }
         positive_usize(
             "training.checkpoint_interval_samples",
             self.training.checkpoint_interval_samples,

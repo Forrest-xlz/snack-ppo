@@ -53,6 +53,57 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_epoch_scale.ps
 cargo run --release -- --config config/experiments/epoch_scale/C-ep4.yaml
 ```
 
+## E003: Batch/rollout switching from existing weights
+
+This study tests whether models trained at smaller scales can recover after switching to a larger scale, and whether models trained at the largest scale retain their performance after switching down. A switch changes mini-batch size, rollout size, and environment count together, keeping `R/b=8`. It does not isolate mini-batch size alone.
+
+Reuse nine E001 epoch-1 checkpoints and run **21 branches: 12 switches and 9 unchanged-scale restart controls**. All branches load the complete actor-critic weights and **reset Adam**, the training environments, random generators, rolling metrics, and early-stopping state. This is a weights-only warm start, not a restoration of the original training process. The unchanged-scale controls also reset Adam, so they measure the effect of continuing from the same weights under the same restart procedure.
+
+| Source scale | Nominal source samples | Target scales per checkpoint | Branches |
+| --- | --- | --- | ---: |
+| A: `b=256`, `R=2,048`, 32 environments | 100M, 300M, 550M | A (control), B, C | 9 |
+| B: `b=1,024`, `R=8,192`, 128 environments | 200M, 500M, 850M | B (control), C | 6 |
+| C: `b=10,240`, `R=81,920`, 1,280 environments | 150M, 450M, 850M | C (control), B | 6 |
+
+The stages describe the observed source curves, not guaranteed convergence. YAML files reference the actual checkpoint counts after full-rollout rounding; for example, nominal A-100M uses `samples-100001792.ot`, not an invented `samples-100000000.ot`. All nine source files must be copied into their original E001 checkpoint folders before running the complete sweep.
+
+Every branch uses epoch 1, seed 42, fixed learning rate `3e-4`, and the corresponding target scale's E001 settings. It has a **300M additional-sample cap**, so the maximum combined new sampling across all branches is approximately 6.3B. This is a hard budget even if scores are still improving. The existing early-stopping rule remains enabled: evaluate every 25M new samples on the same 1,024 held-out seeds, with patience 12. An extra evaluation before the first update establishes the branch's initial score and early-stopping best. No old best score or patience counter is inherited.
+
+The optional training fields are:
+
+```yaml
+training:
+  max_env_samples: 300000000       # new samples for this invocation
+  checkpoint_interval_samples: 50000000
+  checkpoint_dir: checkpoints
+  init_checkpoint: checkpoints/E001_batch_rollout_scale_exp-A/samples-100001792.ot
+  pretrained_env_samples: 100001792
+```
+
+`total_samples = pretrained_env_samples + finetune_samples`. The extra `finetune_samples` W&B axis starts at zero; existing sample-axis charts default to cumulative `total_samples`. Select `finetune_samples` as a custom chart x-axis to compare adaptation after a switch. Evaluation, logging, checkpoint scheduling, optimizer-step counts, and wall time count only the new branch's work. Saved checkpoint filenames contain cumulative sample counts. Initialization files are read-only; the trainer rejects an output directory that contains the source checkpoint.
+
+Configurations are in [config/experiments/batch_rollout_switch](config/experiments/batch_rollout_switch). W&B uses group `E003 batch rollout switch`, with names such as `E003 batch rollout switch A-100M-to-B`. Outputs use matching isolated folders such as `checkpoints/E003_batch_rollout_switch_A-100M-to-B/`.
+
+Preview all 21 branches, check the runtime without training, and launch the sweep:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -CheckRuntime
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1
+```
+
+Runs are ordered by source A/B/C, then early/middle/late, with the restart control first at each checkpoint. Run a subset or start at a particular branch:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -SourceGroup A -Stage Late
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -StartAt B-500M-to-C
+cargo run --release -- --config config/experiments/batch_rollout_switch/A-550M-to-C.yaml
+```
+
+The sweep checks selected source files and existing output checkpoints before building. It stops if a branch fails. `-AllowExistingCheckpoints` permits an intentional fresh rerun that may overwrite E003 output files; it never resumes an interrupted branch. `-StartAt` applies after source/stage filtering and must name an included branch.
+
+Compare each switched branch with its matching restarted source-scale control, and compare against the original target-scale baseline at the same cumulative sample count. Plot adaptation against new samples, and report the last four evaluations as well as the complete curves. Failure to recover within 300M additional samples does not establish irreversible damage. Conclusions are conditional on resetting Adam and the other training state.
+
 ## Sample-based training and stopping
 
 The YAML uses environment samples for the training cap, checkpoint interval, evaluation interval, and W&B upload interval. Early stopping counts evaluations. The outer PPO iteration remains an internal loop counter. A run can exceed its configured sample cap by less than one rollout `R`, because an update consumes a complete rollout.
@@ -93,6 +144,8 @@ PPO diagnostics include positive policy `entropy` (not entropy loss), `policy_lo
 2. For GPU training, install an NVIDIA driver and a CUDA runtime compatible with LibTorch.
 3. Set `LIBTORCH` to a LibTorch 2.7 installation compatible with `tch = 0.20`, and add its `lib` directory to `PATH`. The project's `download-libtorch` feature is useful for CPU compilation and tests.
 4. Install the W&B Python SDK with `C:\Users\Liuluotu\Anaconda\anaconda3\python.exe -m pip install "wandb>=0.22.3"`. Configure `WANDB_API_KEY` or run `wandb login` for online logging.
+
+If online W&B access needs an HTTP proxy, set `HTTP_PROXY` and `HTTPS_PROXY` in the same PowerShell window used to launch the sweep. Use the numeric HTTP or mixed port configured in your proxy application. The child PowerShell, Rust trainer, and Python bridge inherit these environment variables. A proxy URL must contain a real numeric port, not placeholder text. Alternatively, set the experiment YAML's `wandb.mode` to `offline` to keep local metrics for later synchronization.
 
 Eating one food item gives reward `1.0`; all other outcomes, including death, give `0.0`.
 

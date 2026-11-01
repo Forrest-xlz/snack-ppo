@@ -19,6 +19,8 @@ def main():
                 config=message["config"],
             )
             run.define_metric("total_samples")
+            if message["config"]["training"].get("init_checkpoint"):
+                run.define_metric("finetune_samples")
             run.define_metric("train_samples/*", step_metric="total_samples")
             run.define_metric("eval_samples/*", step_metric="total_samples")
         elif kind == "log":
