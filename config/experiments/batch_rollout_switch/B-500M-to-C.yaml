@@ -23,7 +23,7 @@ ppo:
   max_grad_norm: 0.5
 
 training:
-  max_env_samples: 300000000
+  max_env_samples: 1200000000
   checkpoint_interval_samples: 50000000
   checkpoint_dir: checkpoints
   init_checkpoint: checkpoints/E001_batch_rollout_scale_exp-B/samples-500006912.ot

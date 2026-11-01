@@ -67,13 +67,13 @@ Reuse nine E001 epoch-1 checkpoints and run **12 scale-switch branches**. All br
 
 The stages describe the observed source curves, not guaranteed convergence. YAML files reference the actual checkpoint counts after full-rollout rounding; for example, nominal A-100M uses `samples-100001792.ot`, not an invented `samples-100000000.ot`. All nine source files must be copied into their original E001 checkpoint folders before running the complete sweep.
 
-Every branch uses epoch 1, seed 42, fixed learning rate `3e-4`, and the corresponding target scale's E001 settings. It has a **300M additional-sample cap**, so the maximum combined new sampling across all branches is approximately 3.6B. This is a hard budget even if scores are still improving. The existing early-stopping rule remains enabled: evaluate every 25M new samples on the same 1,024 held-out seeds, with patience 12. An extra evaluation before the first update establishes the branch's initial score and early-stopping best. No old best score or patience counter is inherited.
+Every branch uses epoch 1, seed 42, fixed learning rate `3e-4`, and the corresponding target scale's E001 settings. Training ends through evaluation-based early stopping, with the original **1,200M additional-sample cap** retained as the maximum for each branch. There is no 300M training cap: approximately 300M is the waiting period without a new evaluation high. The early-stopping rule remains enabled: evaluate every 25M new samples on the same 1,024 held-out seeds, with patience 12. An extra evaluation before the first update establishes the branch's initial score and early-stopping best. No old best score or patience counter is inherited.
 
 The optional training fields are:
 
 ```yaml
 training:
-  max_env_samples: 300000000       # new samples for this invocation
+  max_env_samples: 1200000000      # maximum new samples; early stopping can end sooner
   checkpoint_interval_samples: 50000000
   checkpoint_dir: checkpoints
   init_checkpoint: checkpoints/E001_batch_rollout_scale_exp-A/samples-100001792.ot
@@ -102,7 +102,7 @@ cargo run --release -- --config config/experiments/batch_rollout_switch/A-550M-t
 
 The sweep checks selected source files and existing output checkpoints before building. It stops if a branch fails. `-AllowExistingCheckpoints` permits an intentional fresh rerun that may overwrite E003 output files; it never resumes an interrupted branch. `-StartAt` applies after source/stage filtering and must name an included branch.
 
-Compare switched branches against the original source- and target-scale baselines at the same cumulative sample count. There are no unchanged-scale restart controls; differences from the original baselines therefore combine the scale change with restarting the optimizer and training state. Plot adaptation against new samples, and report the last four evaluations as well as the complete curves. Failure to recover within 300M additional samples does not establish irreversible damage. Conclusions are conditional on resetting Adam and the other training state.
+Compare switched branches against the original source- and target-scale baselines at the same cumulative sample count. There are no unchanged-scale restart controls; differences from the original baselines therefore combine the scale change with restarting the optimizer and training state. Plot adaptation against new samples, and report the last four evaluations as well as the complete curves. Compare with existing baselines only over their recorded sample ranges, without extrapolating stopped curves. An early stop does not establish irreversible damage. Conclusions are conditional on resetting Adam and the other training state.
 
 ## Sample-based training and stopping
 

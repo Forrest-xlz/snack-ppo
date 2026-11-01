@@ -22,7 +22,7 @@ fn switches_share_sources_and_change_only_target_scale() {
                 "config/experiments/batch_rollout_switch/{name}.yaml"
             ))
             .unwrap();
-            let mut baseline =
+            let baseline =
                 Config::load(format!("config/experiments/batch_rollout/{target}.yaml")).unwrap();
             assert_eq!(config.training.pretrained_env_samples, source_samples);
             assert_eq!(
@@ -36,7 +36,7 @@ fn switches_share_sources_and_change_only_target_scale() {
                     "checkpoints/E001_batch_rollout_scale_exp-{source}/samples-{source_samples}.ot"
                 )
             );
-            assert_eq!(config.training.max_env_samples, 300_000_000);
+            assert_eq!(config.training.max_env_samples, 1_200_000_000);
             assert_eq!(
                 config.wandb.group.as_deref(),
                 Some("E003 batch rollout switch")
@@ -55,7 +55,6 @@ fn switches_share_sources_and_change_only_target_scale() {
                 8
             );
             assert_eq!(config.ppo.epochs, 1);
-            baseline.training.max_env_samples = 300_000_000;
             let mut normalized = config.clone();
             normalized.training.init_checkpoint = None;
             normalized.training.pretrained_env_samples = 0;
