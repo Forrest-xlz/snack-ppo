@@ -104,6 +104,55 @@ The sweep checks selected source files and existing output checkpoints before bu
 
 Compare switched branches against the original source- and target-scale baselines at the same cumulative sample count. There are no unchanged-scale restart controls; differences from the original baselines therefore combine the scale change with restarting the optimizer and training state. Plot adaptation against new samples, and report the last four evaluations as well as the complete curves. Compare with existing baselines only over their recorded sample ranges, without extrapolating stopped curves. An early stop does not establish irreversible damage. Conclusions are conditional on resetting Adam and the other training state.
 
+## E004: Feature and model architecture experiments
+
+Experiment A replaces the shared MLP with a CNN while keeping the original head/body/food features and the E001 C training settings. It trains from scratch: batch size **10,240**, epochs **1**, rollout **81,920**, **1,280** environments, hidden size **256**, seed **42**, fixed learning rate **3e-4**, and the same reward, PPO loss, evaluation, and early-stopping rules. The maximum is **1,200M training samples**, with evaluation every **25M**, **1,024** fixed held-out episodes, and patience **12**. The E001 C MLP run is the reference baseline.
+
+Select the feature and model versions independently in YAML:
+
+```yaml
+features:
+  version: board_v1
+model:
+  version: cnn_v1
+  hidden_size: 256
+```
+
+| Selector | Implemented versions | Meaning |
+| --- | --- | --- |
+| `features.version` | `board_v1` | Unchanged three binary planes: head, body excluding head, food; row-major order, flattened to 432 values on a 12x12 board |
+| `model.version` | `mlp_v1`, `cnn_v1` | Original two-layer shared MLP, or shared CNN plus a dense projection |
+
+Omitting either selector uses `board_v1` and `mlp_v1`, preserving old configuration behavior and MLP checkpoint tensor names. Unknown versions are rejected. Feature selection and model construction are applied consistently in rollout collection, training, evaluation, and visual inference. Only the original feature version is implemented in this first experiment; no direction, tail, or body-order features have been added.
+
+CNN v1 uses three 3x3 convolutions with padding 1, ReLU after each, followed by a 256-unit projection and the existing linear policy/value heads:
+
+```mermaid
+flowchart TD
+    X["Original flat features: N x 432"] --> R["Reshape: N x 3 x 12 x 12"]
+    R --> C1["Conv 3 to 16, stride 2 + ReLU: N x 16 x 6 x 6"]
+    C1 --> C2["Conv 16 to 32, stride 2 + ReLU: N x 32 x 3 x 3"]
+    C2 --> C3["Conv 32 to 64, stride 1 + ReLU: N x 64 x 3 x 3"]
+    C3 --> F["Flatten: N x 576"]
+    F --> H["Linear 576 to 256 + ReLU"]
+    H --> P["Policy: Linear 256 to 4 logits"]
+    H --> V["Value: Linear 256 to 1"]
+```
+
+On the 12x12 board, CNN v1 has **172,581 parameters** versus **177,925** for the original MLP. This keeps parameter counts close, although compute costs and spatial structure differ. The final convolution's nominal receptive field is 15x15, and the dense projection combines all spatial positions. Dimensions are derived from the configured board size. There is no batch normalization, dropout, or change to the PPO optimizer/loss implementation.
+
+The first configuration is [config/experiments/feature_architecture/A.yaml](config/experiments/feature_architecture/A.yaml). It logs to W&B group `E004 feature architecture`, run `E004 feature architecture exp-A`, with checkpoints in `checkpoints/E004_feature_architecture_exp-A/`. Load a CNN checkpoint with the same model/feature versions, board dimensions, and hidden size; existing MLP weights cannot initialize this different architecture.
+
+Preview, check the LibTorch runtime, and launch experiment A:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -CheckRuntime
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1
+```
+
+The sweep currently discovers only A. Future single-letter configurations in the same folder are discovered in alphabetical order; `-StartAt B` starts at B once it exists. Existing checkpoints are protected unless `-AllowExistingCheckpoints` is explicitly supplied for a fresh rerun. Run individual configs through `cargo run --release -- --config config/experiments/feature_architecture/A.yaml` as usual.
+
 ## Sample-based training and stopping
 
 The YAML uses environment samples for the training cap, checkpoint interval, evaluation interval, and W&B upload interval. Early stopping counts evaluations. The outer PPO iteration remains an internal loop counter. A run can exceed its configured sample cap by less than one rollout `R`, because an update consumes a complete rollout.

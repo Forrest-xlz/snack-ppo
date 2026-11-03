@@ -4,6 +4,7 @@ use tch::{no_grad, Device, Tensor};
 use crate::{
     config::{Config, EvaluationConfig},
     env::{Action, SnakeEnv},
+    features::FeatureVersion,
     model::ActorCritic,
 };
 
@@ -28,6 +29,7 @@ pub fn evaluate_policy(
         config.environment.height,
         device,
         seed,
+        config.features.version,
     )
 }
 
@@ -38,12 +40,13 @@ fn evaluate_with(
     height: usize,
     device: Device,
     seed: u64,
+    feature_version: FeatureVersion,
 ) -> Result<EvaluationMetrics> {
     let mut scores = Vec::with_capacity(evaluation.episodes);
     for episode in 0..evaluation.episodes {
         let mut env = SnakeEnv::new(width, height, seed + episode as u64)?;
         for _ in 0..evaluation.max_steps_per_episode {
-            let observation = env.observation();
+            let observation = feature_version.encode(&env);
             let input = Tensor::from_slice(&observation)
                 .view([1, observation.len() as i64])
                 .to_device(device);

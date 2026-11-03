@@ -20,8 +20,7 @@ pub fn run_inference(config: Config) -> Result<()> {
         anyhow::bail!("checkpoint does not exist: {}", checkpoint_path.display());
     }
     let mut store = nn::VarStore::new(device);
-    let input_size = (3 * config.environment.width * config.environment.height) as i64;
-    let model = ActorCritic::new(&store.root(), input_size, config.model.hidden_size);
+    let model = ActorCritic::from_config(&store.root(), &config);
     load_checkpoint(&mut store, &checkpoint_path)?;
     let window = Conf {
         window_title: "PPO Snake".to_owned(),
@@ -56,7 +55,7 @@ async fn inference_loop(config: Config, device: Device, _store: nn::VarStore, mo
             }
         } else if accumulator >= interval {
             accumulator %= interval;
-            let observation = env.observation();
+            let observation = config.features.version.encode(&env);
             let tensor = Tensor::from_slice(&observation)
                 .view([1, observation.len() as i64])
                 .to_device(device);

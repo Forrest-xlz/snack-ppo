@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::features::FeatureVersion;
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
@@ -28,6 +30,8 @@ pub struct Config {
     pub device: DeviceConfig,
     pub seed: u64,
     pub environment: EnvironmentConfig,
+    #[serde(default)]
+    pub features: FeatureConfig,
     pub model: ModelConfig,
     pub ppo: PpoConfig,
     pub training: TrainingConfig,
@@ -50,7 +54,25 @@ pub struct EnvironmentConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
+    #[serde(default)]
+    pub version: ModelVersion,
     pub hidden_size: i64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ModelVersion {
+    #[default]
+    #[serde(rename = "mlp_v1")]
+    MlpV1,
+    #[serde(rename = "cnn_v1")]
+    CnnV1,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FeatureConfig {
+    #[serde(default)]
+    pub version: FeatureVersion,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -1,5 +1,7 @@
 use tch::{nn, nn::Module, Kind, Tensor};
 
+use crate::config::{Config, ModelVersion};
+
 pub struct ActorCritic {
     shared: nn::Sequential,
     policy_head: nn::Linear,
@@ -19,6 +21,54 @@ pub struct EvaluationOutput {
 }
 
 impl ActorCritic {
+    pub fn from_config(path: &nn::Path<'_>, config: &Config) -> Self {
+        let channels = config.features.version.channels() as i64;
+        let height = config.environment.height as i64;
+        let width = config.environment.width as i64;
+        match config.model.version {
+            ModelVersion::MlpV1 => {
+                Self::new(path, channels * height * width, config.model.hidden_size)
+            }
+            ModelVersion::CnnV1 => {
+                Self::cnn(path, channels, height, width, config.model.hidden_size)
+            }
+        }
+    }
+
+    fn cnn(path: &nn::Path<'_>, channels: i64, height: i64, width: i64, hidden_size: i64) -> Self {
+        let downsample = nn::ConvConfig {
+            stride: 2,
+            padding: 1,
+            ..Default::default()
+        };
+        let preserve = nn::ConvConfig {
+            padding: 1,
+            ..Default::default()
+        };
+        let flattened = 64 * ((height + 3) / 4) * ((width + 3) / 4);
+        let shared = nn::seq()
+            .add_fn(move |input| input.view([input.size()[0], channels, height, width]))
+            .add(nn::conv2d(path / "conv1", channels, 16, 3, downsample))
+            .add_fn(Tensor::relu)
+            .add(nn::conv2d(path / "conv2", 16, 32, 3, downsample))
+            .add_fn(Tensor::relu)
+            .add(nn::conv2d(path / "conv3", 32, 64, 3, preserve))
+            .add_fn(Tensor::relu)
+            .add_fn(|input| input.flatten(1, -1))
+            .add(nn::linear(
+                path / "projection",
+                flattened,
+                hidden_size,
+                Default::default(),
+            ))
+            .add_fn(Tensor::relu);
+        Self {
+            shared,
+            policy_head: nn::linear(path / "policy", hidden_size, 4, Default::default()),
+            value_head: nn::linear(path / "value", hidden_size, 1, Default::default()),
+        }
+    }
+
     pub fn new(path: &nn::Path<'_>, input_size: i64, hidden_size: i64) -> Self {
         let shared = nn::seq()
             .add(nn::linear(

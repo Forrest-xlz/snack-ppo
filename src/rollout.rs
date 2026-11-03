@@ -5,6 +5,7 @@ use tch::{no_grad, Device, Tensor};
 use crate::{
     config::EnvironmentConfig,
     env::{Action, SnakeEnv},
+    features::FeatureVersion,
     model::ActorCritic,
 };
 
@@ -18,16 +19,26 @@ pub struct EnvTransition {
 pub struct VectorEnv {
     envs: Vec<SnakeEnv>,
     observation_size: usize,
+    feature_version: FeatureVersion,
 }
 
 impl VectorEnv {
     pub fn new(config: &EnvironmentConfig, base_seed: u64) -> Result<Self> {
+        Self::with_features(config, base_seed, FeatureVersion::default())
+    }
+
+    pub fn with_features(
+        config: &EnvironmentConfig,
+        base_seed: u64,
+        feature_version: FeatureVersion,
+    ) -> Result<Self> {
         let envs = (0..config.num_envs)
             .map(|index| SnakeEnv::new(config.width, config.height, base_seed + index as u64))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             envs,
-            observation_size: 3 * config.width * config.height,
+            observation_size: feature_version.observation_size(config.width, config.height),
+            feature_version,
         })
     }
 
@@ -42,7 +53,10 @@ impl VectorEnv {
     }
 
     pub fn observations(&self) -> Vec<f32> {
-        self.envs.iter().flat_map(SnakeEnv::observation).collect()
+        self.envs
+            .iter()
+            .flat_map(|env| self.feature_version.encode(env))
+            .collect()
     }
 
     pub fn step(&mut self, actions: &[i64]) -> Result<Vec<EnvTransition>> {

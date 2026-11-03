@@ -1,6 +1,7 @@
 pub mod config;
 pub mod env;
 pub mod evaluation;
+pub mod features;
 pub mod metrics;
 pub mod model;
 pub mod ppo;

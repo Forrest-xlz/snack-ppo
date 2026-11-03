@@ -242,8 +242,17 @@ pub fn run_training(config: &Config) -> Result<()> {
     let device = resolve_device(config.device)?;
     tch::manual_seed(config.seed as i64);
     let mut store = nn::VarStore::new(device);
-    let input_size = (3 * config.environment.width * config.environment.height) as i64;
-    let model = ActorCritic::new(&store.root(), input_size, config.model.hidden_size);
+    let model = ActorCritic::from_config(&store.root(), config);
+    println!(
+        "feature_version={:?} model_version={:?} model_parameters={}",
+        config.features.version,
+        config.model.version,
+        store
+            .trainable_variables()
+            .iter()
+            .map(Tensor::numel)
+            .sum::<usize>()
+    );
     let run_name = config
         .wandb
         .run_name
@@ -281,7 +290,8 @@ pub fn run_training(config: &Config) -> Result<()> {
     // Only model tensors are loaded above. Every initialized branch starts
     // with a new Adam optimizer and fresh rollout state.
     let mut optimizer = PpoTrainer::new(&store, &config.ppo, config.seed)?;
-    let mut envs = VectorEnv::new(&config.environment, config.seed)?;
+    let mut envs =
+        VectorEnv::with_features(&config.environment, config.seed, config.features.version)?;
     let mut wandb = WandbLogger::start(config, &run_name)?;
     let samples_per_iteration = config.environment.num_envs * config.environment.rollout_steps;
     let mut score_window = ScoreWindow::new(config.metrics.score_window_episodes);
