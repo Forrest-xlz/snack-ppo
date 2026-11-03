@@ -8,9 +8,6 @@ environment:
   num_envs: 1280
   rollout_steps: 64
 
-features:
-  version: board_v1
-
 model:
   version: cnn_v1
   hidden_size: 256

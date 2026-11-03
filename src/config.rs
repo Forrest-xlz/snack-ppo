@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::features::FeatureVersion;
+use crate::features::FeatureEncoding;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -30,8 +30,6 @@ pub struct Config {
     pub device: DeviceConfig,
     pub seed: u64,
     pub environment: EnvironmentConfig,
-    #[serde(default)]
-    pub features: FeatureConfig,
     pub model: ModelConfig,
     pub ppo: PpoConfig,
     pub training: TrainingConfig,
@@ -68,11 +66,12 @@ pub enum ModelVersion {
     CnnV1,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct FeatureConfig {
-    #[serde(default)]
-    pub version: FeatureVersion,
+impl ModelVersion {
+    pub fn feature_encoding(self) -> FeatureEncoding {
+        match self {
+            Self::MlpV1 | Self::CnnV1 => FeatureEncoding::HeadBodyFood,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

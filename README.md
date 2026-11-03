@@ -108,22 +108,20 @@ Compare switched branches against the original source- and target-scale baseline
 
 Experiment A replaces the shared MLP with a CNN while keeping the original head/body/food features and the E001 C training settings. It trains from scratch: batch size **10,240**, epochs **1**, rollout **81,920**, **1,280** environments, hidden size **256**, seed **42**, fixed learning rate **3e-4**, and the same reward, PPO loss, evaluation, and early-stopping rules. The maximum is **1,200M training samples**, with evaluation every **25M**, **1,024** fixed held-out episodes, and patience **12**. The E001 C MLP run is the reference baseline.
 
-Select the feature and model versions independently in YAML:
+One version selects both the feature encoding and model architecture:
 
 ```yaml
-features:
-  version: board_v1
 model:
   version: cnn_v1
   hidden_size: 256
 ```
 
-| Selector | Implemented versions | Meaning |
+| `model.version` | Feature encoding | Model architecture |
 | --- | --- | --- |
-| `features.version` | `board_v1` | Unchanged three binary planes: head, body excluding head, food; row-major order, flattened to 432 values on a 12x12 board |
-| `model.version` | `mlp_v1`, `cnn_v1` | Original two-layer shared MLP, or shared CNN plus a dense projection |
+| `mlp_v1` | Original head/body/food binary planes, row-major order | Original two-layer shared MLP |
+| `cnn_v1` | Same original head/body/food binary planes | Shared CNN plus a dense projection |
 
-Omitting either selector uses `board_v1` and `mlp_v1`, preserving old configuration behavior and MLP checkpoint tensor names. Unknown versions are rejected. Feature selection and model construction are applied consistently in rollout collection, training, evaluation, and visual inference. Only the original feature version is implemented in this first experiment; no direction, tail, or body-order features have been added.
+Omitting `model.version` defaults to `mlp_v1`, preserving old configuration behavior and MLP checkpoint tensor names. Unknown versions and a separate `features` configuration are rejected. The selected version determines the encoder and network consistently in rollout collection, training, evaluation, and visual inference. Future versions can bind a different encoder and architecture as one combination. No direction, tail, or body-order features have been added in experiment A.
 
 CNN v1 uses three 3x3 convolutions with padding 1, ReLU after each, followed by a 256-unit projection and the existing linear policy/value heads:
 
@@ -141,7 +139,7 @@ flowchart TD
 
 On the 12x12 board, CNN v1 has **172,581 parameters** versus **177,925** for the original MLP. This keeps parameter counts close, although compute costs and spatial structure differ. The final convolution's nominal receptive field is 15x15, and the dense projection combines all spatial positions. Dimensions are derived from the configured board size. There is no batch normalization, dropout, or change to the PPO optimizer/loss implementation.
 
-The first configuration is [config/experiments/feature_architecture/A.yaml](config/experiments/feature_architecture/A.yaml). It logs to W&B group `E004 feature architecture`, run `E004 feature architecture exp-A`, with checkpoints in `checkpoints/E004_feature_architecture_exp-A/`. Load a CNN checkpoint with the same model/feature versions, board dimensions, and hidden size; existing MLP weights cannot initialize this different architecture.
+The first configuration is [config/experiments/feature_architecture/A.yaml](config/experiments/feature_architecture/A.yaml). It logs to W&B group `E004 feature architecture`, run `E004 feature architecture exp-A`, with checkpoints in `checkpoints/E004_feature_architecture_exp-A/`. Load a CNN checkpoint with the same model version, board dimensions, and hidden size; existing MLP weights cannot initialize this different architecture.
 
 Preview, check the LibTorch runtime, and launch experiment A:
 

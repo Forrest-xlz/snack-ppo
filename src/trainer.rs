@@ -244,8 +244,7 @@ pub fn run_training(config: &Config) -> Result<()> {
     let mut store = nn::VarStore::new(device);
     let model = ActorCritic::from_config(&store.root(), config);
     println!(
-        "feature_version={:?} model_version={:?} model_parameters={}",
-        config.features.version,
+        "model_version={:?} model_parameters={}",
         config.model.version,
         store
             .trainable_variables()
@@ -290,8 +289,11 @@ pub fn run_training(config: &Config) -> Result<()> {
     // Only model tensors are loaded above. Every initialized branch starts
     // with a new Adam optimizer and fresh rollout state.
     let mut optimizer = PpoTrainer::new(&store, &config.ppo, config.seed)?;
-    let mut envs =
-        VectorEnv::with_features(&config.environment, config.seed, config.features.version)?;
+    let mut envs = VectorEnv::with_features(
+        &config.environment,
+        config.seed,
+        config.model.version.feature_encoding(),
+    )?;
     let mut wandb = WandbLogger::start(config, &run_name)?;
     let samples_per_iteration = config.environment.num_envs * config.environment.rollout_steps;
     let mut score_window = ScoreWindow::new(config.metrics.score_window_episodes);

@@ -1,18 +1,15 @@
-use serde::{Deserialize, Serialize};
-
 use crate::env::SnakeEnv;
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub enum FeatureVersion {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum FeatureEncoding {
     #[default]
-    #[serde(rename = "board_v1")]
-    BoardV1,
+    HeadBodyFood,
 }
 
-impl FeatureVersion {
+impl FeatureEncoding {
     pub fn channels(self) -> usize {
         match self {
-            Self::BoardV1 => 3,
+            Self::HeadBodyFood => 3,
         }
     }
 
@@ -22,7 +19,7 @@ impl FeatureVersion {
 
     pub fn encode(self, env: &SnakeEnv) -> Vec<f32> {
         match self {
-            Self::BoardV1 => env.observation(),
+            Self::HeadBodyFood => env.observation(),
         }
     }
 }

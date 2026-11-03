@@ -5,7 +5,7 @@ use tch::{no_grad, Device, Tensor};
 use crate::{
     config::EnvironmentConfig,
     env::{Action, SnakeEnv},
-    features::FeatureVersion,
+    features::FeatureEncoding,
     model::ActorCritic,
 };
 
@@ -19,26 +19,26 @@ pub struct EnvTransition {
 pub struct VectorEnv {
     envs: Vec<SnakeEnv>,
     observation_size: usize,
-    feature_version: FeatureVersion,
+    feature_encoding: FeatureEncoding,
 }
 
 impl VectorEnv {
     pub fn new(config: &EnvironmentConfig, base_seed: u64) -> Result<Self> {
-        Self::with_features(config, base_seed, FeatureVersion::default())
+        Self::with_features(config, base_seed, FeatureEncoding::default())
     }
 
     pub fn with_features(
         config: &EnvironmentConfig,
         base_seed: u64,
-        feature_version: FeatureVersion,
+        feature_encoding: FeatureEncoding,
     ) -> Result<Self> {
         let envs = (0..config.num_envs)
             .map(|index| SnakeEnv::new(config.width, config.height, base_seed + index as u64))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             envs,
-            observation_size: feature_version.observation_size(config.width, config.height),
-            feature_version,
+            observation_size: feature_encoding.observation_size(config.width, config.height),
+            feature_encoding,
         })
     }
 
@@ -55,7 +55,7 @@ impl VectorEnv {
     pub fn observations(&self) -> Vec<f32> {
         self.envs
             .iter()
-            .flat_map(|env| self.feature_version.encode(env))
+            .flat_map(|env| self.feature_encoding.encode(env))
             .collect()
     }
 

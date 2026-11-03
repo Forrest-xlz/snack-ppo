@@ -55,7 +55,7 @@ async fn inference_loop(config: Config, device: Device, _store: nn::VarStore, mo
             }
         } else if accumulator >= interval {
             accumulator %= interval;
-            let observation = config.features.version.encode(&env);
+            let observation = config.model.version.feature_encoding().encode(&env);
             let tensor = Tensor::from_slice(&observation)
                 .view([1, observation.len() as i64])
                 .to_device(device);

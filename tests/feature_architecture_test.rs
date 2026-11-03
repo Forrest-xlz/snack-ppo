@@ -8,24 +8,23 @@ use tch::{nn, Device, Kind, Tensor};
 fn cnn_config(output: &Path) -> Config {
     let base: Config = serde_yaml::from_str(include_str!("../config/smoke.yaml")).unwrap();
     let mut value = serde_json::to_value(base).unwrap();
-    value["features"] = json!({"version": "board_v1"});
     value["model"]["version"] = json!("cnn_v1");
     value["environment"]["width"] = json!(7);
     value["training"]["checkpoint_dir"] = json!(output);
     value["wandb"]["run_name"] = json!("cnn-smoke");
-    serde_json::from_value(value).expect("CNN and feature versions must parse")
+    serde_json::from_value(value).expect("the version must select both features and architecture")
 }
 
 #[test]
 fn old_configs_default_to_original_features_and_mlp_and_reject_unknown_versions() {
     let config: Config = serde_yaml::from_str(include_str!("../config/smoke.yaml")).unwrap();
     let mut value = serde_json::to_value(config).unwrap();
-    assert_eq!(value["features"]["version"], "board_v1");
+    assert!(value.get("features").is_none());
     assert_eq!(value["model"]["version"], "mlp_v1");
     value["model"]["version"] = json!("unknown_model");
     assert!(serde_json::from_value::<Config>(value.clone()).is_err());
     value["model"]["version"] = json!("cnn_v1");
-    value["features"]["version"] = json!("unknown_features");
+    value["features"] = json!({"version": "board_v1"});
     assert!(serde_json::from_value::<Config>(value).is_err());
 }
 
@@ -68,7 +67,7 @@ fn experiment_a_changes_only_architecture_and_run_identity_from_large_baseline()
     let baseline = Config::load("config/experiments/batch_rollout/C.yaml").unwrap();
     let mut actual = serde_json::to_value(&config).unwrap();
     let expected = serde_json::to_value(&baseline).unwrap();
-    assert_eq!(actual["features"]["version"], "board_v1");
+    assert!(actual.get("features").is_none());
     assert_eq!(actual["model"]["version"], "cnn_v1");
     assert_eq!(
         config.wandb.group.as_deref(),
@@ -93,7 +92,7 @@ fn board_v1_keeps_the_original_head_body_food_channel_order() {
     let directory = tempfile::tempdir().unwrap();
     let config = cnn_config(directory.path());
     let env = SnakeEnv::new(7, 5, 42).unwrap();
-    let encoded = config.features.version.encode(&env);
+    let encoded = config.model.version.feature_encoding().encode(&env);
     let mut expected = vec![0.0; 105];
     expected[17] = 1.0;
     expected[35 + 16] = 1.0;

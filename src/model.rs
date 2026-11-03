@@ -22,7 +22,7 @@ pub struct EvaluationOutput {
 
 impl ActorCritic {
     pub fn from_config(path: &nn::Path<'_>, config: &Config) -> Self {
-        let channels = config.features.version.channels() as i64;
+        let channels = config.model.version.feature_encoding().channels() as i64;
         let height = config.environment.height as i64;
         let width = config.environment.width as i64;
         match config.model.version {
