@@ -184,6 +184,12 @@ impl SampleWindow {
                 return_std: pooled_std(return_mean, |m| m.return_mean, |m| m.return_std),
                 clip_fraction: weighted(|m| m.clip_fraction),
                 optimizer_steps: self.optimizer_steps,
+                kickstarting_loss: weighted(|m| m.kickstarting_loss),
+                kickstarting_weight: weighted(|m| m.kickstarting_weight),
+                teacher_student_kl: weighted(|m| m.teacher_student_kl),
+                teacher_kl_loss: weighted(|m| m.teacher_kl_loss),
+                teacher_kl_coef: weighted(|m| m.teacher_kl_coef),
+                teacher_kl_penalty: weighted(|m| m.teacher_kl_penalty),
             },
         }
     }

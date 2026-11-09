@@ -1,9 +1,17 @@
 use tch::{nn, nn::Module, Kind, Tensor};
 
 use crate::config::{Config, ModelVersion};
+use crate::entity_transformer::EntityTransformer;
+use crate::transformer::TransformerEncoder;
+
+enum Backbone {
+    Dense(nn::Sequential),
+    Transformer(Box<TransformerEncoder>),
+    EntityTransformer(Box<EntityTransformer>),
+}
 
 pub struct ActorCritic {
-    shared: nn::Sequential,
+    shared: Backbone,
     policy_head: nn::Linear,
     value_head: nn::Linear,
 }
@@ -16,22 +24,97 @@ pub struct PolicyOutput {
 
 pub struct EvaluationOutput {
     pub log_probs: Tensor,
+    pub log_probs_all: Tensor,
     pub entropy: Tensor,
     pub values: Tensor,
 }
 
 impl ActorCritic {
+    pub fn attention_backend(
+        &self,
+        device: tch::Device,
+        batch: i64,
+        cells: i64,
+        training: bool,
+    ) -> Option<String> {
+        match &self.shared {
+            Backbone::Transformer(encoder) => {
+                Some(encoder.attention_backend(device, batch, cells, training))
+            }
+            Backbone::Dense(_) => None,
+            Backbone::EntityTransformer(encoder) => {
+                Some(encoder.attention_backend(device, batch, training))
+            }
+        }
+    }
+
     pub fn from_config(path: &nn::Path<'_>, config: &Config) -> Self {
         let channels = config.model.version.feature_encoding().channels() as i64;
         let height = config.environment.height as i64;
         let width = config.environment.width as i64;
         match config.model.version {
+            ModelVersion::TransformerV5
+            | ModelVersion::TransformerV1Base
+            | ModelVersion::TransformerV1Small
+            | ModelVersion::TransformerV8 => Self {
+                shared: Backbone::EntityTransformer(Box::new(EntityTransformer::new(
+                    path,
+                    height * width,
+                    channels,
+                    config.model.hidden_size,
+                    matches!(
+                        config.model.version,
+                        ModelVersion::TransformerV1Small | ModelVersion::TransformerV8
+                    ),
+                ))),
+                policy_head: nn::linear(
+                    path / "policy",
+                    config.model.hidden_size,
+                    4,
+                    Default::default(),
+                ),
+                value_head: nn::linear(
+                    path / "value",
+                    config.model.hidden_size,
+                    1,
+                    Default::default(),
+                ),
+            },
             ModelVersion::MlpV1 => {
                 Self::new(path, channels * height * width, config.model.hidden_size)
             }
             ModelVersion::CnnV1 => {
                 Self::cnn(path, channels, height, width, config.model.hidden_size)
             }
+            ModelVersion::TransformerV1
+            | ModelVersion::TransformerV2
+            | ModelVersion::TransformerV3
+            | ModelVersion::TransformerV4 => Self {
+                shared: Backbone::Transformer(Box::new(TransformerEncoder::new(
+                    path,
+                    height * width,
+                    channels,
+                    config.model.hidden_size,
+                    match config.model.version {
+                        ModelVersion::TransformerV4 => 3,
+                        ModelVersion::TransformerV3 => 2,
+                        _ => 1,
+                    },
+                    config.model.version == ModelVersion::TransformerV4,
+                ))),
+                policy_head: nn::linear(
+                    path / "policy",
+                    config.model.hidden_size,
+                    4,
+                    Default::default(),
+                ),
+                value_head: nn::linear(
+                    path / "value",
+                    config.model.hidden_size,
+                    1,
+                    Default::default(),
+                ),
+            },
         }
     }
 
@@ -63,7 +146,7 @@ impl ActorCritic {
             ))
             .add_fn(Tensor::relu);
         Self {
-            shared,
+            shared: Backbone::Dense(shared),
             policy_head: nn::linear(path / "policy", hidden_size, 4, Default::default()),
             value_head: nn::linear(path / "value", hidden_size, 1, Default::default()),
         }
@@ -88,16 +171,23 @@ impl ActorCritic {
         let policy_head = nn::linear(path / "policy", hidden_size, 4, Default::default());
         let value_head = nn::linear(path / "value", hidden_size, 1, Default::default());
         Self {
-            shared,
+            shared: Backbone::Dense(shared),
             policy_head,
             value_head,
         }
     }
 
     pub fn forward(&self, observations: &Tensor) -> (Tensor, Tensor) {
-        let features = self.shared.forward(observations);
-        let logits = features.apply(&self.policy_head);
-        let values = features.apply(&self.value_head).squeeze_dim(-1);
+        let (actor_features, critic_features) = match &self.shared {
+            Backbone::Dense(shared) => {
+                let features = shared.forward(observations);
+                (features.shallow_clone(), features)
+            }
+            Backbone::Transformer(encoder) => encoder.forward(observations),
+            Backbone::EntityTransformer(encoder) => encoder.forward(observations),
+        };
+        let logits = actor_features.apply(&self.policy_head);
+        let values = critic_features.apply(&self.value_head).squeeze_dim(-1);
         (logits, values)
     }
 
@@ -129,13 +219,14 @@ impl ActorCritic {
         let log_probs = log_probs_all
             .gather(-1, &actions.unsqueeze(-1), false)
             .squeeze_dim(-1);
-        let entropy = -(probabilities * log_probs_all).sum_dim_intlist(
+        let entropy = -(probabilities * &log_probs_all).sum_dim_intlist(
             [-1i64].as_slice(),
             false,
             Kind::Float,
         );
         EvaluationOutput {
             log_probs,
+            log_probs_all,
             entropy,
             values,
         }

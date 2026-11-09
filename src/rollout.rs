@@ -53,10 +53,12 @@ impl VectorEnv {
     }
 
     pub fn observations(&self) -> Vec<f32> {
-        self.envs
-            .iter()
-            .flat_map(|env| self.feature_encoding.encode(env))
-            .collect()
+        let mut observations = vec![0.0; self.envs.len() * self.observation_size];
+        observations
+            .par_chunks_mut(self.observation_size)
+            .zip(self.envs.par_iter())
+            .for_each(|(row, env)| self.feature_encoding.encode_into(env, row));
+        observations
     }
 
     pub fn step(&mut self, actions: &[i64]) -> Result<Vec<EnvTransition>> {
@@ -104,6 +106,18 @@ pub struct RolloutBuffer {
 }
 
 impl RolloutBuffer {
+    /// Keep the rollout on the host; only selected rows occupy device memory.
+    pub fn observation_batch(&self, indices: &[usize], device: Device) -> Tensor {
+        let mut rows = Vec::with_capacity(indices.len() * self.observation_size);
+        for &index in indices {
+            let start = index * self.observation_size;
+            rows.extend_from_slice(&self.observations[start..start + self.observation_size]);
+        }
+        Tensor::from_slice(&rows)
+            .view([indices.len() as i64, self.observation_size as i64])
+            .to_device(device)
+    }
+
     pub fn len(&self) -> usize {
         self.actions.len()
     }

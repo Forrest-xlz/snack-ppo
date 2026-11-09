@@ -75,6 +75,12 @@ pub fn training_metric_groups(
             metrics.critic_explained_variance,
         ),
         ("policy_approx_kl", metrics.policy_approx_kl),
+        ("kickstarting_loss", metrics.kickstarting_loss),
+        ("kickstarting_weight", metrics.kickstarting_weight),
+        ("teacher_student_kl", metrics.teacher_student_kl),
+        ("teacher_kl_loss", metrics.teacher_kl_loss),
+        ("teacher_kl_coef", metrics.teacher_kl_coef),
+        ("teacher_kl_penalty", metrics.teacher_kl_penalty),
     ];
     let mut grouped = BTreeMap::from([("total_samples".to_owned(), total_samples as f64)]);
     for (name, value) in values {
@@ -137,21 +143,60 @@ use tch::{nn, no_grad, Cuda, Device, Tensor};
 use crate::{
     config::{Config, DeviceConfig},
     evaluation::evaluate_policy,
+    kickstarting::TeacherPolicy,
     metrics::{EarlyStopper, SampleWindow, ScoreWindow},
     model::ActorCritic,
     ppo::PpoTrainer,
     rollout::{collect_rollout, VectorEnv},
+    teacher_kl::EvalTeacher,
     wandb::WandbLogger,
 };
 
 pub fn resolve_device(config: DeviceConfig) -> Result<Device> {
     match config {
         DeviceConfig::Cpu => Ok(Device::Cpu),
-        DeviceConfig::Cuda if Cuda::is_available() => Ok(Device::Cuda(0)),
-        DeviceConfig::Cuda => bail!(
-            "CUDA was requested but is unavailable; install a CUDA-enabled LibTorch and check the NVIDIA runtime"
-        ),
+        DeviceConfig::Cuda => {
+            #[cfg(windows)]
+            load_windows_cuda_runtime()?;
+            if Cuda::is_available() {
+                Ok(Device::Cuda(0))
+            } else {
+                bail!("CUDA was requested but is unavailable; install a CUDA-enabled LibTorch and check the NVIDIA runtime")
+            }
+        }
     }
+}
+
+// The Windows linker may drop torch_cuda's import library because no CUDA
+// symbols are referenced directly by the Rust shim. Loading it registers the
+// CUDA hooks, as PyTorch's Python DLL loader does. Keep it loaded for the life
+// of the process; never load an arbitrary path from checkpoint contents.
+#[cfg(windows)]
+fn load_windows_cuda_runtime() -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryW(path: *const u16) -> *mut std::ffi::c_void;
+    }
+    let explicit =
+        std::env::var_os("LIBTORCH").map(|path| PathBuf::from(path).join("lib/torch_cuda.dll"));
+    let library = explicit.filter(|path| path.is_file()).or_else(|| {
+        std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path)
+            .map(|directory| directory.join("torch_cuda.dll")).find(|path| path.is_file()))
+    }).context("CUDA runtime DLL not found; set LIBTORCH to a CUDA-enabled PyTorch/LibTorch root and include its lib directory in PATH")?;
+    let path = library
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    // SAFETY: the absolute library path is NUL-terminated and remains valid
+    // throughout this synchronous Windows call; the module is retained.
+    let handle = unsafe { LoadLibraryW(path.as_ptr()) };
+    if handle.is_null() {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("failed to load CUDA runtime {}", library.display()));
+    }
+    Ok(())
 }
 
 pub fn save_checkpoint_atomic(
@@ -240,9 +285,23 @@ pub fn resolve_inference_checkpoint(
 
 pub fn run_training(config: &Config) -> Result<()> {
     let device = resolve_device(config.device)?;
+    let mut eval_teacher = EvalTeacher::new(config, device)?;
     tch::manual_seed(config.seed as i64);
     let mut store = nn::VarStore::new(device);
     let model = ActorCritic::from_config(&store.root(), config);
+    for (training, batch) in [
+        (false, config.environment.num_envs),
+        (true, config.ppo.batch_size),
+    ] {
+        if let Some(backend) = model.attention_backend(
+            device,
+            batch as i64,
+            (config.environment.width * config.environment.height) as i64,
+            training,
+        ) {
+            println!("attention_backend={backend}");
+        }
+    }
     println!(
         "model_version={:?} model_parameters={}",
         config.model.version,
@@ -289,6 +348,7 @@ pub fn run_training(config: &Config) -> Result<()> {
     // Only model tensors are loaded above. Every initialized branch starts
     // with a new Adam optimizer and fresh rollout state.
     let mut optimizer = PpoTrainer::new(&store, &config.ppo, config.seed)?;
+    let teacher = TeacherPolicy::load(config, device, &run_name)?;
     let mut envs = VectorEnv::with_features(
         &config.environment,
         config.seed,
@@ -319,6 +379,14 @@ pub fn run_training(config: &Config) -> Result<()> {
             evaluation.mean_score
         );
         let mut logged = evaluation_metric_groups(evaluation, total_samples);
+        update_eval_teacher(
+            &mut eval_teacher,
+            evaluation.mean_score,
+            total_samples,
+            &store,
+            &checkpoint_directory,
+            &mut logged,
+        )?;
         logged.insert("finetune_samples".to_owned(), 0.0);
         if config.early_stopping.enabled {
             logged.extend(eval_stop_metric_groups(
@@ -339,7 +407,29 @@ pub fn run_training(config: &Config) -> Result<()> {
         let (_, final_values) = no_grad(|| model.forward(&final_tensor));
         let final_values = Vec::<f32>::try_from(&final_values.to_device(Device::Cpu))
             .context("failed to copy bootstrap values to CPU")?;
-        let update = optimizer.update(&model, &rollout, &final_values, device)?;
+        let teacher_weight = config
+            .kickstarting
+            .as_ref()
+            .map_or(0.0, |kick| kick.weight_at(finetune_samples));
+        let update = if eval_teacher.enabled() {
+            optimizer.update_with_teacher_kl(
+                &model,
+                &rollout,
+                &final_values,
+                device,
+                eval_teacher
+                    .policy()
+                    .map(|policy| (policy, eval_teacher.coef())),
+            )?
+        } else {
+            optimizer.update_with_kickstarting(
+                &model,
+                &rollout,
+                &final_values,
+                device,
+                teacher.as_ref().map(|policy| (policy, teacher_weight)),
+            )?
+        };
         let metrics = update.metrics;
         optimizer_steps_total += metrics.optimizer_steps;
         sample_window.push(
@@ -377,13 +467,17 @@ pub fn run_training(config: &Config) -> Result<()> {
                 config.ppo.learning_rate,
             );
             println!(
-                "iteration={iteration} total_samples={total_samples} finetune_samples={finetune_samples} window_samples={} episodes={} rolling_score={:?} value_loss={:.5} entropy={:.5} approx_kl={:.6}",
+                "iteration={iteration} total_samples={total_samples} finetune_samples={finetune_samples} window_samples={} episodes={} rolling_score={:?} value_loss={:.5} entropy={:.5} approx_kl={:.6} teacher_weight={:.6} teacher_ce={:.5} teacher_kl_coef={:.6} teacher_kl_loss={:.6}",
                 snapshot.samples,
                 snapshot.episode_count,
                 score_window.snapshot().map(|scores| scores.mean),
                 snapshot.ppo.value_loss,
                 snapshot.ppo.entropy,
                 snapshot.ppo.policy_approx_kl,
+                snapshot.ppo.kickstarting_weight,
+                snapshot.ppo.kickstarting_loss,
+                snapshot.ppo.teacher_kl_coef,
+                snapshot.ppo.teacher_kl_loss,
             );
             sample_window.clear();
             last_log_time = now;
@@ -397,13 +491,22 @@ pub fn run_training(config: &Config) -> Result<()> {
             let evaluation =
                 evaluate_policy(&model, config, device, config.seed.wrapping_add(1_000_003))?;
             println!(
-                "evaluation iteration={iteration} episodes={} mean_score={:.3} min_score={} max_score={}",
+                "evaluation iteration={iteration} device={device:?} batch_size={} episodes={} mean_score={:.3} min_score={} max_score={}",
+                config.evaluation.batch_size.min(config.evaluation.episodes),
                 config.evaluation.episodes,
                 evaluation.mean_score,
                 evaluation.min_score,
                 evaluation.max_score,
             );
             logged.extend(evaluation_metric_groups(evaluation, total_samples));
+            update_eval_teacher(
+                &mut eval_teacher,
+                evaluation.mean_score,
+                total_samples,
+                &store,
+                &checkpoint_directory,
+                &mut logged,
+            )?;
             if config.early_stopping.enabled {
                 let update = early_stopper.observe(evaluation.mean_score);
                 logged.extend(eval_stop_metric_groups(update, total_samples));
@@ -444,5 +547,31 @@ pub fn run_training(config: &Config) -> Result<()> {
         }
     }
     wandb.finish()?;
+    Ok(())
+}
+
+fn update_eval_teacher(
+    teacher: &mut EvalTeacher,
+    mean_score: f64,
+    total_samples: usize,
+    student: &nn::VarStore,
+    directory: &Path,
+    logged: &mut BTreeMap<String, f64>,
+) -> Result<()> {
+    if !teacher.enabled() {
+        return Ok(());
+    }
+    let updated = teacher.observe(mean_score, total_samples, student)?;
+    if updated {
+        teacher.save(directory)?;
+    }
+    let best = teacher.best_mean_score().unwrap();
+    let source = teacher.source_samples().unwrap();
+    logged.insert("eval_samples/teacher_mean_score".into(), best);
+    logged.insert("eval_samples/teacher_source_samples".into(), source as f64);
+    logged.insert("eval_samples/teacher_updated".into(), f64::from(updated));
+    println!(
+        "teacher_kl_updated={updated} teacher_mean_score={best:.3} teacher_source_samples={source}"
+    );
     Ok(())
 }

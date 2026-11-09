@@ -38,6 +38,38 @@ pub struct Config {
     pub metrics: MetricsConfig,
     pub early_stopping: EarlyStoppingConfig,
     pub wandb: WandbConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kickstarting: Option<KickstartingConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teacher_kl: Option<TeacherKlConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TeacherKlConfig {
+    pub enabled: bool,
+    #[serde(default = "default_teacher_kl_coef")]
+    pub coef: f64,
+}
+
+fn default_teacher_kl_coef() -> f64 {
+    0.001
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KickstartingConfig {
+    pub teacher_checkpoint: PathBuf,
+    pub teacher_model: ModelConfig,
+    pub initial_weight: f64,
+    pub decay_samples: usize,
+}
+
+impl KickstartingConfig {
+    pub fn weight_at(&self, student_samples: usize) -> f64 {
+        self.initial_weight
+            * (1.0 - student_samples as f64 / self.decay_samples.max(1) as f64).max(0.0)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,12 +96,32 @@ pub enum ModelVersion {
     MlpV1,
     #[serde(rename = "cnn_v1")]
     CnnV1,
+    #[serde(rename = "transformer_v1")]
+    TransformerV1,
+    #[serde(rename = "transformer_v2")]
+    TransformerV2,
+    #[serde(rename = "transformer_v3")]
+    TransformerV3,
+    #[serde(rename = "transformer_v4")]
+    TransformerV4,
+    #[serde(rename = "transformer_v5")]
+    TransformerV5,
+    #[serde(rename = "transformer_v1_base")]
+    TransformerV1Base,
+    #[serde(rename = "transformer_v1_small")]
+    TransformerV1Small,
+    #[serde(rename = "transformer_v8")]
+    TransformerV8,
 }
 
 impl ModelVersion {
     pub fn feature_encoding(self) -> FeatureEncoding {
         match self {
-            Self::MlpV1 | Self::CnnV1 => FeatureEncoding::HeadBodyFood,
+            Self::MlpV1 | Self::CnnV1 | Self::TransformerV1 => FeatureEncoding::HeadBodyFood,
+            Self::TransformerV2 | Self::TransformerV3 => FeatureEncoding::HeadBodyFoodGeometryOrder,
+            Self::TransformerV4 => FeatureEncoding::GridRich31,
+            Self::TransformerV5 | Self::TransformerV8 => FeatureEncoding::EntityBase,
+            Self::TransformerV1Base | Self::TransformerV1Small => FeatureEncoding::EntityRegions,
         }
     }
 }
@@ -116,6 +168,8 @@ pub struct InferenceConfig {
 pub struct EvaluationConfig {
     pub interval_samples: usize,
     pub episodes: usize,
+    #[serde(default = "default_evaluation_batch_size")]
+    pub batch_size: usize,
     pub deterministic: bool,
     pub max_steps_per_episode: usize,
 }
@@ -137,6 +191,10 @@ pub struct EarlyStoppingConfig {
 
 fn default_log_interval_samples() -> usize {
     1_000_000
+}
+
+fn default_evaluation_batch_size() -> usize {
+    1024
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -210,6 +268,42 @@ impl Config {
         non_negative("ppo.value_coef", self.ppo.value_coef)?;
         non_negative("ppo.entropy_coef", self.ppo.entropy_coef)?;
         positive_f64("ppo.max_grad_norm", self.ppo.max_grad_norm)?;
+        if let Some(teacher) = &self.teacher_kl {
+            non_negative("teacher_kl.coef", teacher.coef)?;
+            if teacher.enabled && teacher.coef > 0.0 && self.kickstarting.is_some() {
+                return Err(ConfigError::new(
+                    "teacher_kl",
+                    "cannot enable evaluation-best teacher KL together with kickstarting",
+                ));
+            }
+        }
+        if let Some(kick) = &self.kickstarting {
+            non_negative("kickstarting.initial_weight", kick.initial_weight)?;
+            positive_usize("kickstarting.decay_samples", kick.decay_samples)?;
+            if kick.teacher_checkpoint.as_os_str().is_empty() {
+                return Err(ConfigError::new(
+                    "kickstarting.teacher_checkpoint",
+                    "must not be empty",
+                ));
+            }
+            if kick.teacher_model.hidden_size <= 0 {
+                return Err(ConfigError::new(
+                    "kickstarting.teacher_model.hidden_size",
+                    "must be positive",
+                ));
+            }
+            if !kick
+                .teacher_model
+                .version
+                .feature_encoding()
+                .is_prefix_of(self.model.version.feature_encoding())
+            {
+                return Err(ConfigError::new(
+                    "kickstarting.teacher_model.version",
+                    "teacher features must be a prefix of the student features",
+                ));
+            }
+        }
         positive_usize("training.max_env_samples", self.training.max_env_samples)?;
         if self.training.pretrained_env_samples > 0 && self.training.init_checkpoint.is_none() {
             return Err(ConfigError::new(
@@ -266,6 +360,7 @@ impl Config {
             self.evaluation.interval_samples,
         )?;
         positive_usize("evaluation.episodes", self.evaluation.episodes)?;
+        positive_usize("evaluation.batch_size", self.evaluation.batch_size)?;
         positive_usize(
             "evaluation.max_steps_per_episode",
             self.evaluation.max_steps_per_episode,

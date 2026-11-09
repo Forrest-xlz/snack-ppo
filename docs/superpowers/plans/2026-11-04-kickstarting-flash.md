@@ -1,0 +1,29 @@
+# Kickstarting and FlashAttention
+
+**User request:** Use FlashAttention, load `checkpoints/E001_batch_rollout_scale_exp-C/latest.ot` as a frozen imitation expert, decay its influence into RL following Kickstarting Deep Reinforcement Learning, and benchmark matched CPU/CUDA sampling/update throughput before providing a runnable command.
+
+**Paper:** https://arxiv.org/abs/1803.03835, equations 2–3: student-generated trajectories and ordinary RL loss plus a teacher-to-student policy cross-entropy. The paper explores PBT and manually chosen linear schedules. This implementation uses PPO and a configurable manual schedule, not IMPALA/PBT reproduction or a separate expert-trajectory pretraining phase.
+
+**Implementation choices:** Keep experiment C as the no-teacher control; add D with the same 7-feature Transformer. Teacher is MLP v1 hidden256, using the original first three observation planes on the student's states, with frozen weights and no teacher actions driving rollouts. Add an optional `kickstarting` config (absent keeps old behavior). Start auxiliary weight at1 and decay linearly to0 at200M new student samples, then skip teacher inference. PPO/critic/entropy losses remain active from sample0; no teacher value targets. Existing eval25M/1024/patience12 and cap1200M remain. D uses CUDA once validated with a compatible local runtime. Protect the teacher file from output writes.
+
+**Attention:** Retain standard softmax attention, all keys/values and the single-layer two-query optimization. Verify actual fused-kernel support; do not call an automatic math fallback FlashAttention. CUDA FlashAttention needs supported half/bfloat16 Q/K/V, so keep model/PPO losses in FP32 and use a limited BF16 attention boundary if supported. Report actual backend and numerical differences. Preserve old CPU configs/checkpoints. GPU hardware is RTX5070Ti Laptop (12GB); existing bundled LibTorch appears CPU-only, so inspect available PyTorch runtimes before changing dependencies.
+
+## Tasks
+
+- [x] Add failing tests for optional config/validation, sample-based schedule, full-policy cross-entropy, frozen teacher on shared states, zero-weight PPO equivalence, diagnostics, CLI handoff and missing/incompatible checkpoints.
+- [x] Implement kickstarting module, PPO loss integration, teacher loading, weight scheduling and W&B metrics. No expert data reaches held-out evaluation.
+- [x] Verify available CUDA attention path, preserving output/gradient tests and explicit backend reporting. Inspect actual GPU/runtime capability and benchmark CPU/CUDA under identical collection/update settings with synchronization and warmup.
+- [x] Add D.yaml and runtime-safe launcher support; document equation, choices, limits, checkpoint origin, and exact command in English.
+- [x] Run full tests, release build, dry run, actual teacher checkpoint smoke, read-only review; record measured outcomes and blockers honestly. No long training or online W&B run.
+
+## Decisions and evidence
+
+The user confirmed that FlashAttention was intended, then explicitly selected a working CUDA version with the available fused SDPA backend instead of requiring a new FlashAttention-capable environment. Installed Windows PyTorch is2.11.0+cu128, CUDA is available, but CUDA FlashAttention is not compiled. Upgrade tch/torch-sys0.20→0.24 to match that existing runtime rather than bypassing version checks. An attempted official matching2.7CUDA download was slow and was stopped; partial owned download files were removed. No Python environment or drivers were changed.
+
+Windows Rust initially reported CUDA unavailable despite Python CUDA succeeding. Inspection showed torch_cuda's import library could be discarded without direct symbol use, leaving CUDA hooks unregistered. Explicitly loading the matching torch_cuda.dll before the CUDA check fixed the actual benchmark. BF16 is limited to CUDA Q/K/V and attention output conversion; other parameters/operations remainFP32. The backend probe matches actual batch/dtype/strides and reports memory_efficient(id2) for both1280-env collection and10240-minibatch updates. CPU reports its own fused CPU attention(id1), distinct from CUDA FlashAttention.
+
+Matched D benchmarks use the real requested expert, one warmup rollout and two timed rollouts (163840 measured samples). CPU: collection40786.90samples/s, collection+bootstrap+PPO6101.03samples/s; CUDA: collection164456.70samples/s, total76918.56samples/s. CUDA improves collection4.03x and total12.61x. Reports are under ignored target/benchmarks/E004-D-{cpu,cuda}.json. This is an early-training practical FP32-CPU/BF16-attention-GPU comparison, not equal-precision hardware isolation or an end-to-end completion forecast. Approximately4.3hours for1.2B at the measured GPU training rate excludes sequential evaluation and saving.
+
+The full-size CUDA trainer also completed two81920-sample rollouts with the real expert and an artificially shortened decay boundary, confirming weight1→0, zero teacher CE after switch-off, evaluation, saved student checkpoints, and unchanged SHA256 of the expert file. Smoke config/output is isolated under target/kickstarting-cuda-smoke, with W&B disabled.
+
+All82 tests passed with PPO_SNAKE_REQUIRE_CUDA_TESTS=1, so GPU validation could not silently skip; release binary/example build, format/diff checks and D launch/benchmark previews passed. An old exact-equality assertion between mathematically identical critic batch rows was changed to the established floating-point tolerance after the PyTorch runtime upgrade; tensor shapes and checkpoint names remain unchanged. Read-only review found no critical/important issues; its minor silent-CUDA-skip concern was addressed with an explicit opt-in requirement and skip reason. No formal training, online W&B run, commit or push was performed.

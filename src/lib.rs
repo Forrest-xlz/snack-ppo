@@ -1,11 +1,16 @@
 pub mod config;
+mod entity_features;
+mod entity_transformer;
 pub mod env;
 pub mod evaluation;
 pub mod features;
+pub mod kickstarting;
 pub mod metrics;
 pub mod model;
 pub mod ppo;
 pub mod renderer;
 pub mod rollout;
+pub mod teacher_kl;
 pub mod trainer;
+mod transformer;
 pub mod wandb;

@@ -16,7 +16,7 @@ rayon = "1.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1.0"
-tch = { version = "0.20", features = ["download-libtorch"] }
+tch = { version = "0.24", features = ["download-libtorch"] }
 thiserror = "2.0"
 
 [dev-dependencies]

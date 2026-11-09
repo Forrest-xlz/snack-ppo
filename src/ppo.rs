@@ -3,7 +3,13 @@ use rand::{seq::SliceRandom, Rng};
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 use tch::{nn, nn::OptimizerConfig, Device, Kind, Tensor};
 
-use crate::{config::PpoConfig, model::ActorCritic, rollout::RolloutBuffer};
+use crate::{
+    config::PpoConfig,
+    kickstarting::{policy_cross_entropy, TeacherPolicy},
+    model::ActorCritic,
+    rollout::RolloutBuffer,
+    teacher_kl::policy_kl,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GaeParams {
@@ -116,6 +122,12 @@ pub struct PpoMetrics {
     pub return_std: f64,
     pub clip_fraction: f64,
     pub optimizer_steps: usize,
+    pub kickstarting_loss: f64,
+    pub kickstarting_weight: f64,
+    pub teacher_student_kl: f64,
+    pub teacher_kl_loss: f64,
+    pub teacher_kl_coef: f64,
+    pub teacher_kl_penalty: f64,
 }
 
 pub struct PpoUpdate {
@@ -145,6 +157,40 @@ impl PpoTrainer {
         last_values: &[f32],
         device: Device,
     ) -> Result<PpoUpdate> {
+        self.update_with_kickstarting(model, rollout, last_values, device, None)
+    }
+
+    pub fn update_with_kickstarting(
+        &mut self,
+        model: &ActorCritic,
+        rollout: &RolloutBuffer,
+        last_values: &[f32],
+        device: Device,
+        teacher: Option<(&TeacherPolicy, f64)>,
+    ) -> Result<PpoUpdate> {
+        self.update_with_teacher_objective(model, rollout, last_values, device, teacher, false)
+    }
+
+    pub fn update_with_teacher_kl(
+        &mut self,
+        model: &ActorCritic,
+        rollout: &RolloutBuffer,
+        last_values: &[f32],
+        device: Device,
+        teacher: Option<(&TeacherPolicy, f64)>,
+    ) -> Result<PpoUpdate> {
+        self.update_with_teacher_objective(model, rollout, last_values, device, teacher, true)
+    }
+
+    fn update_with_teacher_objective(
+        &mut self,
+        model: &ActorCritic,
+        rollout: &RolloutBuffer,
+        last_values: &[f32],
+        device: Device,
+        teacher: Option<(&TeacherPolicy, f64)>,
+        use_kl: bool,
+    ) -> Result<PpoUpdate> {
         let (advantages, returns) = compute_gae(
             &rollout.rewards,
             &rollout.dones,
@@ -159,10 +205,24 @@ impl PpoTrainer {
         );
         let critic_explained_variance = explained_variance(&returns, &rollout.values);
         let sample_count = rollout.len();
-        let observations = Tensor::from_slice(&rollout.observations)
-            .view([sample_count as i64, rollout.observation_size as i64])
-            .to_device(device);
         let actions = Tensor::from_slice(&rollout.actions).to_device(device);
+        let teacher = teacher.filter(|(_, weight)| *weight > 0.0);
+        let teacher_targets = teacher.map(|(policy, _)| {
+            // Cache only four probabilities per state on CUDA; chunk order
+            // matches original row order and the teacher's original batches.
+            let targets = rollout
+                .observations
+                .chunks(self.config.batch_size * rollout.observation_size)
+                .map(|chunk| {
+                    let rows = Tensor::from_slice(chunk)
+                        .view([-1, rollout.observation_size as i64])
+                        .to_device(device);
+                    policy.probabilities(&rows, self.config.batch_size)
+                })
+                .collect::<Vec<_>>();
+            Tensor::cat(&targets, 0)
+        });
+        let teacher_weight = teacher.map_or(0.0, |(_, weight)| weight);
         let old_log_probs = Tensor::from_slice(&rollout.log_probs).to_device(device);
         let returns = Tensor::from_slice(&returns).to_device(device);
         let advantages = Tensor::from_slice(&advantages).to_device(device);
@@ -174,6 +234,11 @@ impl PpoTrainer {
             (&advantages - advantages.mean(Kind::Float)) / (advantages.std(false) + 1e-8);
 
         let mut metrics = PpoMetrics::default();
+        if use_kl {
+            metrics.teacher_kl_coef = teacher_weight;
+        } else {
+            metrics.kickstarting_weight = teacher_weight;
+        }
         metrics.raw_adv_mean = raw_adv_mean;
         metrics.raw_adv_std = raw_adv_std;
         metrics.return_mean = return_mean;
@@ -185,7 +250,7 @@ impl PpoTrainer {
                     &batch.iter().map(|value| *value as i64).collect::<Vec<_>>(),
                 )
                 .to_device(device);
-                let batch_observations = observations.index_select(0, &indices);
+                let batch_observations = rollout.observation_batch(&batch, device);
                 let batch_actions = actions.index_select(0, &indices);
                 let evaluation = model.evaluate_actions(&batch_observations, &batch_actions);
                 let batch_old_log_probs = old_log_probs.index_select(0, &indices);
@@ -212,7 +277,28 @@ impl PpoTrainer {
                 let entropy = evaluation.entropy.mean(Kind::Float);
                 let total_losses = &policy_losses + self.config.value_coef * &value_losses
                     - self.config.entropy_coef * &evaluation.entropy;
-                let total_loss = total_losses.mean(Kind::Float);
+                let mut total_loss = total_losses.mean(Kind::Float);
+                if let Some(targets) = &teacher_targets {
+                    let targets = targets.index_select(0, &indices);
+                    if use_kl {
+                        let kl = policy_kl(&targets, &evaluation.log_probs_all).mean(Kind::Float);
+                        metrics.teacher_kl_loss += kl.double_value(&[]) * batch.len() as f64;
+                        total_loss += teacher_weight * kl;
+                    } else {
+                        let cross_entropy =
+                            policy_cross_entropy(&targets, &evaluation.log_probs_all)
+                                .mean(Kind::Float);
+                        let teacher_entropy = -(&targets * targets.clamp_min(1e-30).log())
+                            .sum_dim_intlist([-1i64].as_slice(), false, Kind::Float)
+                            .mean(Kind::Float);
+                        metrics.kickstarting_loss +=
+                            cross_entropy.double_value(&[]) * batch.len() as f64;
+                        metrics.teacher_student_kl += (&cross_entropy - teacher_entropy)
+                            .double_value(&[])
+                            * batch.len() as f64;
+                        total_loss += teacher_weight * cross_entropy;
+                    }
+                }
 
                 self.optimizer
                     .backward_step_clip(&total_loss, self.config.max_grad_norm);
@@ -233,6 +319,10 @@ impl PpoTrainer {
         metrics.total_loss /= divisor;
         metrics.policy_approx_kl /= divisor;
         metrics.clip_fraction /= (sample_count * self.config.epochs) as f64;
+        metrics.kickstarting_loss /= (sample_count * self.config.epochs) as f64;
+        metrics.teacher_student_kl /= (sample_count * self.config.epochs) as f64;
+        metrics.teacher_kl_loss /= (sample_count * self.config.epochs) as f64;
+        metrics.teacher_kl_penalty = metrics.teacher_kl_coef * metrics.teacher_kl_loss;
         metrics.critic_explained_variance = critic_explained_variance;
         metrics.optimizer_steps = updates;
         Ok(PpoUpdate { metrics })
