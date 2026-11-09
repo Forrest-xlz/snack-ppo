@@ -1,0 +1,581 @@
+{
+  "verified_at_utc": "2026-11-09T04:17:08.340852+00:00",
+  "runs": [
+    {
+      "run_id": "8qn5aaor",
+      "history_sha256": "2c5a7e3992aa66edfdb89e81930a70080821d9d0f7889cf949646931beb1d4a4",
+      "rows": 850,
+      "max_step": 849,
+      "max_samples": 850001920.0,
+      "evals": 34,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "1fl1l7hm",
+      "history_sha256": "cc12f7ecc0d921b1870bf8b9b73662846f710fbf54aea901952a80a558da81a1",
+      "rows": 1175,
+      "max_step": 1174,
+      "max_samples": 1175003136.0,
+      "evals": 47,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "pqn9f1sl",
+      "history_sha256": "9f9cb4c8e1ef0419e628c88014b0dc9d21c4ade2af0c1ee4e29a962d12d035d5",
+      "rows": 1200,
+      "max_step": 1199,
+      "max_samples": 1200046080.0,
+      "evals": 48,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "imrudw4e",
+      "history_sha256": "eb555328a221934d64b6a86ebd86cc008352e0671f978c857d1f92cf0e761096",
+      "rows": 725,
+      "max_step": 724,
+      "max_samples": 725000192.0,
+      "evals": 29,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "ywj4sihn",
+      "history_sha256": "0b1c2edd6b917fbbd79e956cc8db06a6ba079fb888c7fadd6f2271fcca8d7fe7",
+      "rows": 1125,
+      "max_step": 1124,
+      "max_samples": 1125007360.0,
+      "evals": 45,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "9ag8xl46",
+      "history_sha256": "c96c68af1715b1631a2969629a35d814585a763abd342aeb987049d12df6923d",
+      "rows": 1200,
+      "max_step": 1199,
+      "max_samples": 1200005120.0,
+      "evals": 48,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "243228id",
+      "history_sha256": "1825db8798e218218be07aec4d5c278357e3c9a4207d0ad24cf29911cc7bf42c",
+      "rows": 825,
+      "max_step": 824,
+      "max_samples": 825001984.0,
+      "evals": 33,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "w82bujg6",
+      "history_sha256": "7b944ec0ddad94c196eea8af82dc255598f29702bd677aaf9eca56b197b812f2",
+      "rows": 575,
+      "max_step": 574,
+      "max_samples": 575004672.0,
+      "evals": 23,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "lawmpttr",
+      "history_sha256": "ad5fbbd10140cc627ea9b886b49d353c6eee9861e50b6362079e92711acf7c9a",
+      "rows": 1200,
+      "max_step": 1199,
+      "max_samples": 1200046080.0,
+      "evals": 48,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "cxnzx3v7",
+      "history_sha256": "8f25cc7079892d82f93b1b8e39de33b63528b8a96cc8a438246d2a0058e9ddd4",
+      "rows": 375,
+      "max_step": 374,
+      "max_samples": 375001088.0,
+      "evals": 15,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "vyhvyz65",
+      "history_sha256": "74cf7d1d9e9e6aea191f4cd7af6cbd6aab8afb8b82f48b7e0c74b921928b141c",
+      "rows": 425,
+      "max_step": 424,
+      "max_samples": 425000960.0,
+      "evals": 17,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "os6nv8lh",
+      "history_sha256": "58607d058f5bb7784ca676ce5fa074b77fb4ab94f34f3b50b07526ccac831079",
+      "rows": 1200,
+      "max_step": 1199,
+      "max_samples": 1200046080.0,
+      "evals": 48,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "gs8jmhi1",
+      "history_sha256": "b931227dda8bca6b252d4efb2f207475d4e580a71300bc4f7247b272d334169f",
+      "rows": 325,
+      "max_step": 324,
+      "max_samples": 325001216.0,
+      "evals": 13,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "27bpgubc",
+      "history_sha256": "d0be14e0d66c7097dd79b8d8aa26e5e01c59e4d40a992b8f95329e9d507569c8",
+      "rows": 425,
+      "max_step": 424,
+      "max_samples": 425000960.0,
+      "evals": 17,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "iknka9jp",
+      "history_sha256": "2fdc44f370ff7f70e1ec5b37ce7c1514b71809cdc3efbaa870fee0ebee8a522d",
+      "rows": 1000,
+      "max_step": 999,
+      "max_samples": 1000079360.0,
+      "evals": 40,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "dqjtc7nx",
+      "history_sha256": "aeec2cb276cb4fa734aeab2ef3a1bbf986cf4485278c118941392ef254cdf2b7",
+      "rows": 876,
+      "max_step": 875,
+      "max_samples": 975005696.0,
+      "evals": 36,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "kg14yclt",
+      "history_sha256": "234fe377c24b2b9a4eeba9ee81f7f44a4d50b063667e26a874bdeec49b1f2f79",
+      "rows": 1201,
+      "max_step": 1200,
+      "max_samples": 1300047872.0,
+      "evals": 49,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "0kz667ok",
+      "history_sha256": "dd5fbe976c6c7139477bbe2d62ebd9f9c73c5289e3de39db0370005a9ddbff0c",
+      "rows": 526,
+      "max_step": 525,
+      "max_samples": 825001984.0,
+      "evals": 22,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "4rq43nzz",
+      "history_sha256": "c617727671cd090710c41389f820209e99040eb50efba0e7c4982b579bad3971",
+      "rows": 1201,
+      "max_step": 1200,
+      "max_samples": 1500047360.0,
+      "evals": 49,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "tsuw61ly",
+      "history_sha256": "25ec91ef47985c3394490c63d69bbe5aa5fd9e3e228aa9bd11326a329b18d30b",
+      "rows": 1151,
+      "max_step": 1150,
+      "max_samples": 1700001792.0,
+      "evals": 47,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "7436yevl",
+      "history_sha256": "c7c09e47a034b913426fd6987b1bbf3bc7cf9419d21ea394f7ead3e6268a598b",
+      "rows": 1201,
+      "max_step": 1200,
+      "max_samples": 1750046720.0,
+      "evals": 49,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "tgfr335x",
+      "history_sha256": "9502d2bd2819a15ca987a49045ab5ed3416319500ea276339e588b97f900803b",
+      "rows": 1201,
+      "max_step": 1200,
+      "max_samples": 1400053760.0,
+      "evals": 49,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "14fyacu6",
+      "history_sha256": "9b51305f9e6699582669694c2e02235158d9c4463a34d32441cd5746a1d90662",
+      "rows": 1201,
+      "max_step": 1200,
+      "max_samples": 1700052992.0,
+      "evals": 49,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "myl98rs7",
+      "history_sha256": "2e168fb639e74845fe541676e09a891ebfe67d16e152d1f747d049104d09de2d",
+      "rows": 476,
+      "max_step": 475,
+      "max_samples": 1325056000.0,
+      "evals": 20,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "atb499b6",
+      "history_sha256": "b0d2aec49cc9f6171d4640cc9529d99858019fd492479d2bb6e0349d823ca233",
+      "rows": 476,
+      "max_step": 475,
+      "max_samples": 625082368.0,
+      "evals": 20,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "27xxfqi2",
+      "history_sha256": "f42757e079089f5199814a731b8c42d83e1f504776566683b37c4ac9d7521050",
+      "rows": 301,
+      "max_step": 300,
+      "max_samples": 750075904.0,
+      "evals": 13,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "op3gdb5t",
+      "history_sha256": "847019f0bcd71138da2801fe51eabf9c5bf6aca0507eeba08eba1dfc809f57eb",
+      "rows": 851,
+      "max_step": 850,
+      "max_samples": 1700003840.0,
+      "evals": 35,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "k7ceg6iz",
+      "history_sha256": "77a43db352282d66e8185464651bab70b9d0f6bd34da2652dc5dafc12af5e223",
+      "rows": 1200,
+      "max_step": 1199,
+      "max_samples": 1200046080.0,
+      "evals": 48,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "tinpghgt",
+      "history_sha256": "b3e122b703a253bd739a5fa1b5fbedf629492d97e8719110e0ab95f1d1e2c3cd",
+      "rows": 311,
+      "max_step": 310,
+      "max_samples": 311050240.0,
+      "evals": 12,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "7w4f2mfc",
+      "history_sha256": "4f50a20349eb89c8ae8f7df0f1059f172b7e5734cb980796cc971c44d15ae37c",
+      "rows": 575,
+      "max_step": 574,
+      "max_samples": 575078400.0,
+      "evals": 23,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "jokwhg5k",
+      "history_sha256": "fa35451503bca67d18fe2061ec68662d0d73e3c09fb1fcabf39aa344846fbf64",
+      "rows": 419,
+      "max_step": 418,
+      "max_samples": 419020800.0,
+      "evals": 16,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    },
+    {
+      "run_id": "y7o6jbpw",
+      "history_sha256": "7668bad1576f0d5d33fc34dfeb67bba2124dd3f546e6fae02a6381648ba891bf",
+      "rows": 925,
+      "max_step": 924,
+      "max_samples": 925040640.0,
+      "evals": 37,
+      "checks_passed": [
+        "archive hash",
+        "row count",
+        "unique steps",
+        "monotone samples",
+        "score bounds",
+        "summary coverage",
+        "sample clock",
+        "optimizer-step accounting"
+      ]
+    }
+  ]
+}

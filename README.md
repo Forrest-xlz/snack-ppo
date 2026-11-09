@@ -1,133 +1,173 @@
-# PPO Snake (Rust)
+# PPO Snake: experiments in reinforcement learning scaling
 
-This project uses a small Snake game to study scaling behavior in reinforcement learning without requiring high-end hardware. A 12×12 environment and compact PPO actor–critic make controlled CPU experiments practical. The experiments study PPO mini-batch size, rollout size, and the number of optimization epochs per rollout.
+This project uses a simple **12×12 Snake game to explore reinforcement learning scaling behavior on accessible hardware**. CPU PPO baselines and small models on a laptop GPU make it possible to study batch size, rollout size, data reuse, training history, features and model architecture without a large compute cluster.
 
-## E001: Batch and rollout scaling
+The initial snake length is 3, so a full board corresponds to **141 food items / score**, not 144. The goal is to understand what changes learning speed, achieved score and stability. These experiments explore scaling behavior; they do not establish a universal scaling law.
 
-All runs use training seed 42, 64 rollout steps per environment, a hidden size of 256, one PPO epoch, and a fixed learning rate of `3e-4`. Shared settings are `gamma=0.99`, `gae_lambda=0.95`, `clip_range=0.2`, `value_coef=1`, `entropy_coef=0.001`, and `max_grad_norm=0.5`. Each run has a **1,200M environment-sample cap** and the same early-stopping rule. All six runs have completed; result analysis is pending.
+## Results at a glance
 
-`R = num_envs × rollout_steps` is the amount collected for one PPO update; `b = ppo.batch_size` is the optimization mini-batch size.
+This report covers **32 W&B runs and 26,717 complete metric-history rows**, downloaded on **2026-11-09** from the [ppo-snake project](https://wandb.ai/xlz1014361885-tokyo/ppo-snake). All runs use training seed **42**. Results describe these observed trajectories, with no estimate of variation across training seeds.
 
-| Group | Mini-batch `b` | Rollout `R` | Environments | `R/b` | Comparison |
-| --- | ---: | ---: | ---: | ---: | --- |
-| A | 256 | 2,048 | 32 | 8 | Small joint-scaling point; compare with D at fixed `b` |
-| B | 1,024 | 8,192 | 128 | 8 | Middle joint-scaling point; compare with D at fixed `R` and E at fixed `b` |
-| C | 10,240 | 81,920 | 1,280 | 8 | Large joint-scaling point; compare with E at fixed `R` and F at fixed `b` |
-| D | 256 | 8,192 | 128 | 32 | Mini-batch effect versus B at `R=8,192` |
-| E | 1,024 | 81,920 | 1,280 | 80 | Mini-batch effect versus C at `R=81,920` |
-| F | 10,240 | 20,480 | 320 | 2 | Rollout effect versus C at `b=10,240` |
+- **Batch size matters under this PPO configuration.** E001 A/B/C achieved best observed eval scores of **67.94 / 102.48 / 110.65**. Comparisons at fixed rollout support a mini-batch effect; increasing rollout by itself does not consistently help.
+- **More PPO epochs are not an automatic improvement.** At 300M samples, scale A scored **58.03** with one epoch but **1.84** with eight. Large-batch C tolerated two or four epochs much better than A/B, with little change in the late score range.
+- **Training history matters.** After switching the complete scale, B→C can reach roughly 110, while the A→C schedules observed here end around 76–94. A late C→B switch can retain scores above 100. A larger batch does not erase every training-history effect within the observed budget.
+- **The earlier MLP score range is not the game's model ceiling.** E004 base reached **132.94 at 400M**, and small + teacher KL reached **131.55 at 925M**. Both runs are marked **`crashed` / incomplete** in W&B; these are last observed evaluations, not completed-run guarantees.
 
-A–B–C repeat joint scaling at constant `R/b=8`. D–B and E–C vary mini-batch size while holding `R` fixed. A–D, B–E, and F–C vary `R` while holding mini-batch size fixed. With one PPO epoch, changing `b` also changes optimizer steps per environment sample; these comparisons describe the combined PPO mini-batch setting. Keep the learning rate and all other parameters fixed for this study.
+The [per-run catalog](docs/analysis/run-catalog.md) includes the design, plot, result and interpretation for **every run**. Exact numbers and logged configurations are available in [run_results.csv](docs/analysis/data/run_results.csv), [eval_history.csv](docs/analysis/data/eval_history.csv), and [run_configs.json](docs/analysis/data/run_configs.json). Implementation details and feature layouts are in the [technical guide](docs/technical-guide.md).
 
-## E002: PPO epoch scaling
+## How to read the comparisons
 
-Reuse completed E001 groups A, B, and C as the `epochs=1` baselines. Train nine new runs from scratch with `epochs=2,4,8`, changing only the epoch count and experiment identity relative to each corresponding baseline. The epoch-1 results remain in the E001 W&B group and are not rerun by the E002 sweep.
+The primary strength metric is **held-out deterministic `eval_samples/mean_score`**, measured on the same **1,024 evaluation seeds**, with a 5,000-step cap per game. Stochastic training scores use the latest 1,024 completed training games; they help diagnose learning but are not interchangeable with eval.
 
-| Scale | Mini-batch `b` | Rollout `R` | Environments | Existing baseline | New configurations |
-| --- | ---: | ---: | ---: | --- | --- |
-| A | 256 | 2,048 | 32 | E001 A, epoch 1 | `A-ep2`, `A-ep4`, `A-ep8` |
-| B | 1,024 | 8,192 | 128 | E001 B, epoch 1 | `B-ep2`, `B-ep4`, `B-ep8` |
-| C | 10,240 | 81,920 | 1,280 | E001 C, epoch 1 | `C-ep2`, `C-ep4`, `C-ep8` |
+Evaluation curves below are **raw and unsmoothed**. Training diagnostic plots show faint raw values plus a causal EMA with a **25M-sample half-life**, except where a figure explicitly states 5M or 10M. No curve is extended after a run ends. `M` means one million environment transitions, and displayed sample counts are rounded; the CSV retains exact counts.
 
-All shared settings above, including the fixed learning rate, sample cap, evaluation seeds, 25M evaluation interval, 1,024 evaluation episodes, and patience of 12 evaluations, carry over to E002. Configurations are in [config/experiments/epoch_scale](config/experiments/epoch_scale). W&B uses group `E002 epoch scale` and run names such as `E002 epoch scale A-ep2`. Each run has its own checkpoint directory, for example `checkpoints/E002_epoch_scale_A-ep2/`.
+**Last eval** is the last recorded evaluation, which can precede the last training upload. **Last 4 evals** is the arithmetic mean of the last four evaluation means; it describes a short tail of the trajectory, not four independent training repetitions. **Best eval** is the maximum observed evaluation mean, shown to reveal peaks and regressions. It is an optimistic, retrospectively selected diagnostic, not an independently verified model-selection score. Different stopping times make endpoint-only rankings incomplete; common-sample comparisons and the full curves are included for that reason.
 
-An epoch makes one complete pass through the current rollout, with mini-batches reshuffled on each pass. Each scale has `R/b=8`, so epochs 1, 2, 4, and 8 perform 8, 16, 32, and 64 optimizer steps per rollout. At a fixed environment-sample budget, increasing epochs increases data reuse and optimization work. Compare evaluation mean score against environment samples for sample efficiency, and against wall time and optimizer steps for training cost. Compare epoch choices within each scale before comparing their effects across scales. Use common sampled milestones; do not extend stopped curves or treat an early stop as proof of a performance ceiling. Results describe training seed 42 under the fixed `3e-4` learning rate.
+Shared PPO settings are LR **3e-4**, gamma **0.99**, GAE lambda **0.95**, clipping range **0.2**, value coefficient **1**, entropy coefficient **0.001**, and rollout horizon **64**. The MLP has two 256-unit hidden layers and the original head/body/food planes. Evaluation is scheduled every **25M** samples; **12 consecutive evaluations without a strict new high** trigger early stopping. The cap is **1,200M new samples**, with a possible overshoot below one rollout. Early stopping is a budget heuristic, not evidence of an irreversible ceiling.
 
-Preview, check the LibTorch runtime, and launch all nine new experiments:
+## E001 — Mini-batch and rollout size
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_epoch_scale.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_epoch_scale.ps1 -CheckRuntime
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_epoch_scale.ps1
-```
+**Question.** Does the benefit of increasing the joint training scale come from mini-batch size `b`, rollout size `R`, or both? `R = num_envs × 64`. A/B/C keep `R/b=8`. D/E/F provide comparisons that hold one factor fixed. All use one PPO epoch and the same MLP.
 
-The sweep builds once and runs `A-ep2`, `B-ep2`, `C-ep2`, then the three epoch-4 runs, then the three epoch-8 runs. It stops on failure and refuses to overwrite an existing selected run's `latest.ot`. To start at a particular experiment, run:
+| Run | Mini-batch b | Rollout R | Envs | Eval @300M | Eval @600M | Last eval | Last 4 evals | Best eval (at M) | End M / reason |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [A](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/8qn5aaor) | 256 | 2,048 | 32 | 58.03 | 66.26 | 57.39 | 61.69 | 67.94 (550) | 850 / eval early stop |
+| [B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/1fl1l7hm) | 1,024 | 8,192 | 128 | 78.38 | 95.23 | 98.56 | 97.82 | 102.48 (875) | 1175 / eval early stop |
+| [C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/pqn9f1sl) | 10,240 | 81,920 | 1,280 | 86.44 | 95.87 | 103.24 | 106.19 | 110.65 (1050) | 1200 / sample cap |
+| [D](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/imrudw4e) | 256 | 8,192 | 128 | 56.90 | 48.16 | 60.92 | 58.16 | 65.83 (425) | 725 / eval early stop |
+| [E](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/ywj4sihn) | 1,024 | 81,920 | 1,280 | 62.82 | 77.06 | 98.21 | 84.71 | 101.03 (825) | 1125 / eval early stop |
+| [F](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/9ag8xl46) | 10,240 | 20,480 | 320 | 76.70 | 87.74 | 96.64 | 97.17 | 99.58 (1125) | 1200 / sample cap |
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_epoch_scale.ps1 -StartAt B-ep4
-```
+### Joint scale: A, B and C
 
-`-StartAt` launches that experiment and every subsequent experiment from scratch; it does not restore training state. Use `-AllowExistingCheckpoints` only for an intentional rerun that may overwrite checkpoints. To launch one experiment:
+![E001 joint scaling](docs/analysis/figures/e001_joint_scale.png)
 
-```powershell
-cargo run --release -- --config config/experiments/epoch_scale/C-ep4.yaml
-```
+At the common **300M** budget, A/B/C score **58.03 / 78.38 / 86.44**. At **600M**, B and C are much closer (**95.23 vs 95.87**), while A remains lower. Larger scale is associated with a higher late score range, but its advantage changes with training time. The data do not show that every point on the larger-scale curve is better.
 
-## E003: Batch/rollout switching from existing weights
+### Holding rollout fixed
 
-This study tests whether models trained at smaller scales can recover after switching to a larger scale, and whether models trained at the largest scale retain their performance after switching down. A switch changes mini-batch size, rollout size, and environment count together, keeping `R/b=8`. It does not isolate mini-batch size alone.
+![E001 fixed rollout](docs/analysis/figures/e001_fixed_rollout.png)
 
-Reuse nine E001 epoch-1 checkpoints and run **12 scale-switch branches**. All branches load the complete actor-critic weights and **reset Adam**, the training environments, random generators, rolling metrics, and early-stopping state. This is a weights-only warm start, not a restoration of the original training process.
+- At **R=8,192**, B (`b=1,024`) scores **95.23** at 600M versus D (`b=256`) at **48.16**.
+- At **R=81,920**, C (`b=10,240`) scores **95.87** at 600M versus E (`b=1,024`) at **77.06**.
 
-| Source scale | Nominal source samples | Target scales per checkpoint | Branches |
-| --- | --- | --- | ---: |
-| A: `b=256`, `R=2,048`, 32 environments | 100M, 300M, 550M | B, C | 6 |
-| B: `b=1,024`, `R=8,192`, 128 environments | 200M, 500M, 850M | C | 3 |
-| C: `b=10,240`, `R=81,920`, 1,280 environments | 150M, 450M, 850M | B | 3 |
+These comparisons support a mini-batch contribution under the fixed learning rate and optimizer used here. They do **not** isolate gradient variance as the mechanism: at fixed samples, a smaller mini-batch also performs more Adam steps (`steps ≈ samples × epochs / b`).
 
-The stages describe the observed source curves, not guaranteed convergence. YAML files reference the actual checkpoint counts after full-rollout rounding; for example, nominal A-100M uses `samples-100001792.ot`, not an invented `samples-100000000.ot`. All nine source files must be copied into their original E001 checkpoint folders before running the complete sweep.
+### Holding mini-batch fixed
 
-Every branch uses epoch 1, seed 42, fixed learning rate `3e-4`, and the corresponding target scale's E001 settings. Training ends through evaluation-based early stopping, with the original **1,200M additional-sample cap** retained as the maximum for each branch. There is no 300M training cap: approximately 300M is the waiting period without a new evaluation high. The early-stopping rule remains enabled: evaluate every 25M new samples on the same 1,024 held-out seeds, with patience 12. An extra evaluation before the first update establishes the branch's initial score and early-stopping best. No old best score or patience counter is inherited.
+![E001 fixed mini-batch](docs/analysis/figures/e001_fixed_batch.png)
 
-The optional training fields are:
+Increasing R is not uniformly helpful. A→D at `b=256` does not raise the observed best score, and B→E at `b=1,024` learns more slowly through much of the curve. At `b=10,240`, C's larger rollout finishes at **103.24** versus F's **96.64** at the same 1,200M budget. Rollout effects depend on mini-batch size. Changing R here also changes the number of parallel environments, so it combines policy-refresh frequency and trajectory-diversity effects.
 
-```yaml
-training:
-  max_env_samples: 1200000000      # maximum new samples; early stopping can end sooner
-  checkpoint_interval_samples: 50000000
-  checkpoint_dir: checkpoints
-  init_checkpoint: checkpoints/E001_batch_rollout_scale_exp-A/samples-100001792.ot
-  pretrained_env_samples: 100001792
-```
+### Diagnostics and conclusion
 
-`total_samples = pretrained_env_samples + finetune_samples`. The extra `finetune_samples` W&B axis starts at zero; existing sample-axis charts default to cumulative `total_samples`. Select `finetune_samples` as a custom chart x-axis to compare adaptation after a switch. Evaluation, logging, checkpoint scheduling, optimizer-step counts, and wall time count only the new branch's work. Saved checkpoint filenames contain cumulative sample counts. Initialization files are read-only; the trainer rejects an output directory that contains the source checkpoint.
+![E001 training diagnostics](docs/analysis/figures/e001_diagnostics.png)
 
-Configurations are in [config/experiments/batch_rollout_switch](config/experiments/batch_rollout_switch). W&B uses group `E003 batch rollout switch`, with names such as `E003 batch rollout switch A-100M-to-B`. Outputs use matching isolated folders such as `checkpoints/E003_batch_rollout_switch_A-100M-to-B/`.
+In the common **500–600M** window, mean value loss is approximately **0.154 / 0.109 / 0.090** for A/B/C; entropy is **0.0186 / 0.0229 / 0.0345**, and raw advantage std is **0.398 / 0.332 / 0.300**. This is consistent with lower value-target error and more stochastic policies at larger scale. These measurements use different learned state distributions and are not a causal explanation. Approximate KL is also not uniformly lower for larger batches.
 
-Preview all 12 branches, check the runtime without training, and launch the sweep:
+**Conclusion:** with this fixed-LR, epoch-1 protocol, increasing mini-batch size is a stronger and more consistent direction than increasing rollout alone. The factorial comparisons support that distinction. The available sample budget and early stopping do not prove an absolute, irrecoverable performance ceiling.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -CheckRuntime
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1
-```
+## E002 — PPO epochs
 
-Runs are ordered by source A/B/C, then early/middle/late. Run a subset or start at a particular branch:
+**Question.** How much can each rollout be reused before more optimizer updates become harmful? Each A/B/C baseline from E001 is compared with **2, 4 and 8 epochs**, with its mini-batch, rollout, learning rate and model unchanged. More epochs multiply optimizer work per environment sample, so this is a sample-budget comparison, not equal compute.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -SourceGroup A -Stage Late
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout_switch.ps1 -StartAt B-500M-to-C
-cargo run --release -- --config config/experiments/batch_rollout_switch/A-550M-to-C.yaml
-```
+| Scale / epochs | Eval @300M | Last eval | Last 4 evals | Best eval | End M | Reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| [A, epoch 1](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/8qn5aaor) | 58.03 | 57.39 | 61.69 | 67.94 | 850 | eval early stop |
+| [A, epoch 2](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/243228id) | 61.98 | 35.25 | 31.49 | 62.08 | 825 | eval early stop |
+| [A, epoch 4](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/cxnzx3v7) | 15.64 | 19.14 | 11.96 | 39.50 | 375 | eval early stop |
+| [A, epoch 8](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/gs8jmhi1) | 1.84 | 1.15 | 1.74 | 19.73 | 325 | eval early stop |
+| [B, epoch 1](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/1fl1l7hm) | 78.38 | 98.56 | 97.82 | 102.48 | 1175 | eval early stop |
+| [B, epoch 2](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/w82bujg6) | 69.05 | 69.12 | 68.99 | 71.57 | 575 | eval early stop |
+| [B, epoch 4](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/vyhvyz65) | 54.60 | 62.68 | 64.01 | 70.87 | 425 | eval early stop |
+| [B, epoch 8](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/27bpgubc) | 17.29 | 1.06 | 2.96 | 41.85 | 425 | eval early stop |
+| [C, epoch 1](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/pqn9f1sl) | 86.44 | 103.24 | 106.19 | 110.65 | 1200 | sample cap |
+| [C, epoch 2](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/lawmpttr) | 88.44 | 107.87 | 105.63 | 107.92 | 1200 | sample cap |
+| [C, epoch 4](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/os6nv8lh) | 88.97 | 103.44 | 104.35 | 107.13 | 1200 | sample cap |
+| [C, epoch 8](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/iknka9jp) | 83.22 | 57.95 | 51.22 | 95.14 | 1000 | eval early stop |
 
-The sweep checks selected source files and existing output checkpoints before building. It stops if a branch fails. `-AllowExistingCheckpoints` permits an intentional fresh rerun that may overwrite E003 output files; it never resumes an interrupted branch. `-StartAt` applies after source/stage filtering and must name an included branch.
+![E002 epoch curves](docs/analysis/figures/e002_epochs.png)
 
-Compare switched branches against the original source- and target-scale baselines at the same cumulative sample count. There are no unchanged-scale restart controls; differences from the original baselines therefore combine the scale change with restarting the optimizer and training state. Plot adaptation against new samples, and report the last four evaluations as well as the complete curves. Compare with existing baselines only over their recorded sample ranges, without extrapolating stopped curves. An early stop does not establish irreversible damage. Conclusions are conditional on resetting Adam and the other training state.
+**A:** two epochs slightly improve the 300M score (**61.98 vs 58.03**) but later regress; four and eight epochs perform poorly. **B:** all tested epoch increases are worse than epoch 1 at the common 300M point; eight epochs ends near score 1. **C:** two and four epochs achieve roughly the same late score range as epoch 1. Epoch 2 has a higher last eval (**107.87 vs 103.24**), while its last-four mean (**105.63**) is slightly below epoch 1 (**106.19**). The ranking depends on which point is selected. Eight epochs eventually regresses substantially.
 
-## E004: Feature and model architecture experiments
+### What the A-epoch-2 collapse does and does not show
 
-The active configurations are **A, B, C and D** in [config/experiments/feature_architecture](config/experiments/feature_architecture). All train from scratch with batch **10,240**, PPO epoch **1**, rollout **81,920**, **1,280** environments, seed **42**, hidden readout size **256**, fixed LR **3e-4**, cap **1,200M**, evaluation every **25M** on **1,024** held-out episodes and patience **12**. B/C/D use CUDA and the same training, evaluation, logging and early-stop settings; D adds teacher KL regularization to B.
+![A epoch 2 collapse diagnostics](docs/analysis/figures/e002_collapse.png)
 
-| Experiment | `model.version` | Features | Input MLPs | Encoders | Token width | Parameters on 12x12 |
-| --- | --- | --- | --- | ---: | ---: | ---: |
-| A | `cnn_v1` | Original head/body/food planes | CNN plus dense projection | - | - | 172,581 |
-| B | `transformer_v1_small` | 66 Cell + 21 Snake + 24 Food + 8 Global | input -> 32 -> 16 | 2 | 16 | 18,533 |
-| C | `transformer_v1_base` | Same as B | input -> 64 -> 32 | 3 | 32 | 56,357 |
-| D | `transformer_v1_small` | Same as B; evaluation-best self-teacher KL | input -> 32 -> 16 | 2 | 16 | 18,533 per model |
+The eval mean drops from **48.03 at 700M** to **13.99 at 750M**, then partly recovers to **41.91 at 800M**. Training scores also decline, so this is not solely a deterministic-evaluation artifact. In the **650–700M** window, epoch-2 approximate KL averages about **0.0175**; during **750–775M**, raw advantage std averages **0.519** and critic explained variance averages **0.814**, versus roughly **0.380 / 0.957** before the sharp regression. Entropy is low, but later rises during partial recovery; its trajectory alone does not identify the cause.
 
-One `model.version` selects both feature encoding and architecture. There is no separate feature-version setting. B versus C changes model capacity and depth while keeping inputs, reward, PPO and evaluation fixed. The retired names `transformer_v6` and `transformer_v7` are rejected, rather than accepted as compatibility aliases. Omitting a model version still selects the original MLP used by the earlier E001-E003 studies.
+The joint pattern is **consistent with excessive policy updating and a deteriorating critic interacting**, but it does not establish which process initiated the regression. PPO's clipping objective is not a hard KL bound, and these logged KL estimates are pre-mini-batch diagnostics, not full-rollout post-update distances. Proving a mechanism would require additional measurements or a controlled change.
 
-```yaml
-model:
-  version: transformer_v1_small
-  hidden_size: 256
-```
+**Conclusion:** retain epoch 1 as the conservative baseline for A/B. C tolerates moderate reuse, but these runs do not establish a robust late-score gain from epochs 2–4. An epoch increase without controlling learning rate or policy movement is not a free scaling improvement.
 
-W&B uses group `E004 feature architecture` and run names `E004 feature architecture exp-A` through `exp-D`. Checkpoint folders use the corresponding names under `checkpoints/`, such as `checkpoints/E004_feature_architecture_exp-B/`. B's existing weights use the same tensor shapes under the new small name. C's base model has different shapes and starts independently in its own folder.
+## E003 — Switching the complete batch/rollout scale
 
-### D: Evaluation-best self-teacher KL
+**Question.** Can a policy trained at one scale recover or retain performance after the scale changes? Each branch loads an existing weights-only checkpoint, **resets Adam**, and switches the complete A/B/C scale while retaining `R/b=8`. A→B and A→C use nominal switch points **100/300/550M**; B→C uses **200/500/850M**; C→B uses **150/450/850M**. These points were chosen separately for the source curves, not as universal early/middle/late fractions.
 
-[D.yaml](config/experiments/feature_architecture/D.yaml) copies B's protocol and small Transformer, adding a fixed, independently configurable coefficient:
+Every branch has up to **1,200M additional** samples, with the same eval-based early stopping. There is no 300M hard cap. The initial evaluation at the switch is included. Actual source counts can differ from nominal names by less than one source rollout.
+
+| Schedule | At switch | After +300M | Last eval | Last 4 evals | Best eval | End M: total / additional |
+| --- | --- | --- | --- | --- | --- | --- |
+| [A-100M-to-B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/dqjtc7nx) | 52.12 | 67.61 | 67.91 | 67.65 | 70.17 | 975 / 875 |
+| [A-100M-to-C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/kg14yclt) | 52.12 | 68.30 | 83.95 | 77.28 | 83.95 | 1300 / 1200 |
+| [A-300M-to-B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/0kz667ok) | 58.03 | 60.13 | 69.10 | 66.86 | 69.54 | 825 / 525 |
+| [A-300M-to-C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/4rq43nzz) | 58.03 | 69.71 | 93.87 | 95.38 | 98.46 | 1500 / 1200 |
+| [A-550M-to-B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/tsuw61ly) | 67.94 | 71.32 | 72.07 | 70.53 | 72.22 | 1700 / 1150 |
+| [A-550M-to-C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/7436yevl) | 67.94 | 72.22 | 75.60 | 76.58 | 77.98 | 1750 / 1200 |
+| [B-200M-to-C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/tgfr335x) | 73.01 | 84.06 | 97.71 | 99.09 | 101.61 | 1400 / 1200 |
+| [B-500M-to-C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/14fyacu6) | 89.45 | 100.25 | 108.12 | 108.75 | 110.61 | 1700 / 1200 |
+| [B-850M-to-C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/myl98rs7) | 86.43 | 106.37 | 106.01 | 105.08 | 107.42 | 1325 / 475 |
+| [C-150M-to-B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/atb499b6) | 63.12 | 97.18 | 97.53 | 92.73 | 98.32 | 625 / 475 |
+| [C-450M-to-B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/27xxfqi2) | 100.13 | 93.82 | 93.82 | 94.62 | 100.13 | 750 / 300 |
+| [C-850M-to-B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/op3gdb5t) | 101.57 | 102.06 | 105.31 | 103.14 | 108.28 | 1700 / 850 |
+
+![E003 total sample clock](docs/analysis/figures/e003_total.png)
+
+![E003 additional sample clock](docs/analysis/figures/e003_additional.png)
+
+The first plot charges pretraining to the total sample clock. The second shows adaptation after switching; the from-scratch reference there excludes the branch's prefix cost and must not be read as an equal-total-budget comparison.
+
+- **A→B:** the branches improve on their initial score, but remain around 67–72 in their last-four means rather than reaching B-from-scratch's late range near 98.
+- **A→C:** recovery is incomplete and non-monotonic in switching time. The 300M switch ends at **93.87**, the 100M switch at **83.95**, and the 550M switch at **75.60**. Earlier switching is not always better in these trajectories.
+- **B→C:** the 500M switch reaches **110.61**, close to C-from-scratch's best **110.65**, and ends at **108.12**. The 850M switch reaches **107.42** after a shorter adaptation. Medium-scale pretraining can therefore be followed by strong large-scale performance in this sample.
+- **C→B:** lowering the scale does not immediately erase high performance. The 850M branch ends at **105.31**, whereas the 450M branch falls from **100.13** initially to **93.82**, stops after +300M, and never exceeds its initial evaluation.
+
+**Conclusion:** the attained policy depends on its training path as well as its current scale. Recovery is observed, but it is not guaranteed within a fixed continuation budget. Because same-scale Adam-reset controls were deliberately not run, these comparisons do not isolate the effect of changing scale from optimizer reset. Their endpoints also use different total budgets; this is evidence about schedules, not proof of an optimal switch time or an irreversible small-batch trap.
+
+## E004 — Features, architecture and evaluation-best teacher KL
+
+**Question.** Can a better representation/model exceed the MLP score range, and can a frozen best-eval teacher reduce the small model's regression? All logged E004 runs use `b=10,240`, `R=81,920`, epoch 1 and the shared PPO/eval protocol.
+
+**Historical names matter.** The W&B run called `exp-B` is **`transformer_v3`**, an earlier seven-feature grid model. `exp-B-v7` is the entity **small** architecture now named `transformer_v1_small`. The current B YAML selects small; it does not reproduce the historical `exp-B` run. C is the base entity model. D is small plus teacher KL. The report uses the configurations stored with the runs, not today's YAML as a substitute for history.
+
+| Run | Logged model version | Experiment | Eval @300M | Last eval | Last 4 evals | Best eval | Logged / eval M | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [A](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/k7ceg6iz) | `cnn_v1` | CNN, original 3 planes | 51.06 | 74.42 | 72.49 | 75.23 | 1200 / 1200 | sample cap |
+| [B](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/tinpghgt) | `transformer_v3` | Historical grid Transformer, 7 features | 30.98 | 30.98 | 20.75 | 33.80 | 311 / 300 | ended before configured cap |
+| [B-v7](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/7w4f2mfc) | `transformer_v7` | Entity Transformer small, no teacher | 104.33 | 71.62 | 82.44 | 125.55 | 575 / 575 | eval early stop |
+| [C](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/jokwhg5k) | `transformer_v1_base` | Entity Transformer base, no teacher | 121.10 | 132.94 | 130.21 | 132.94 | 419 / 400 | crashed (partial) |
+| [D](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/y7o6jbpw) | `transformer_v1_small` | Entity Transformer small + teacher KL | 109.01 | 131.55 | 125.65 | 131.90 | 925 / 925 | crashed (partial) |
+
+![E004 architecture comparison](docs/analysis/figures/e004_architectures.png)
+
+The CNN uses only the original three planes and ends at **74.42**, below the MLP's **103.24** at 1,200M. The early seven-feature Transformer is unstable and ends early at **30.98**; it is not evidence that the later entity Transformers fail. The entity models use **144 Cell + Snake + Food + Global tokens**, with **66/21/24/8** respective raw feature dimensions. Small uses input→32→16 MLPs and 2 encoders; base uses input→64→32 and 3 encoders, retaining a 256-unit actor/critic readout. These models change both representation and architecture relative to the MLP, so this study does not identify which individual feature supplies the gain.
+
+For a common sample-clock comparison:
+
+| Run | Eval @300M | Eval @400M | Eval @575M |
+| --- | --- | --- | --- |
+| E001 C MLP | 86.44 | 92.71 | 97.42 |
+| E004 B-v7 small | 104.33 | 100.17 | 71.62 |
+| E004 C base | 121.10 | 132.94 | — (interrupted) |
+| E004 D small + KL | 109.01 | 115.61 | 120.82 |
+
+The base model reaches **132.94** at 400M, while the MLP is **92.71** at that point. This is evidence that the earlier MLP range was not a game-level performance ceiling. C's history ends at 419M training samples, with its last eval at 400M; D ends at 925M. Both have W&B state `crashed`. A training exception log was unavailable for these runs, so the interruption causes remain unknown. C also has a sharp training-score drop after its last eval: the rolling mean falls to **18.49 at 409M**, then recovers to **129.32 at 419M**. No later held-out eval confirms the state after that event. A high last eval does not prove future stability or convergence. The 5,000-step evaluation cap is also part of what these scores measure.
+
+The stronger representations also cost more in these recorded jobs. Logged training wall time is about **3.16 h** for the MLP's 1,200M samples, **10.17 h** for base's 419M, and **17.31 h** for D's 925M. These are observed job times across CPU/CUDA and evolving implementations, not a controlled hardware-speed comparison. Higher score is not synonymous with lower computational cost.
+
+### D: frozen evaluation-best self-teacher
+
+Starting from B's small-model configuration, D adds
 
 ```yaml
 teacher_kl:
@@ -135,230 +175,56 @@ teacher_kl:
   coef: 0.001
 ```
 
-Training uses `L = L_PPO + coef * mean_s KL(teacher(.|s) || student(.|s))`, on states collected by the student. This is the full action-distribution forward KL, including the teacher-entropy term, with no critic distillation. Teacher weights are frozen and stored independently; inference uses bounded mini-batches on the configured CUDA device. The coefficient does not decay and is independent of `ppo.entropy_coef`. Disabling the section, omitting it, or setting `coef: 0` skips teacher allocation/inference and retains ordinary PPO. Fixed-expert kickstarting and active self-teacher KL cannot be enabled together.
+The objective is **`L_PPO + coef × mean_s KL(teacher(.|s) || student(.|s))`**, evaluated on student rollout states. The first scheduled eval initializes the teacher. Each later strict new eval high copies the student into the frozen teacher; ties/regressions keep it. There is no critic distillation, coefficient decay, or student/Adam reset. `teacher.ot` stores this teacher; `latest.ot` remains the current student.
 
-The first scheduled evaluation (at the rollout crossing 25M samples) copies the student into the teacher; no teacher penalty applies before that. At each later evaluation, a **strictly higher** held-out mean score replaces the teacher. A tie or lower score keeps the existing teacher and its recorded score. The same held-out evaluation seeds and deterministic evaluation protocol are used throughout. Updating the teacher never resets the student or Adam. Early stopping remains unchanged: 12 evaluations without a strict new high, with the existing 1,200M sample cap.
+![E004 teacher comparison](docs/analysis/figures/e004_teacher_comparison.png)
 
-`latest.ot` and `samples-*.ot` remain student checkpoints. `teacher.ot` in D's run directory stores the most recently accepted teacher. W&B records `train_samples/teacher_kl_loss` (unweighted forward KL), `teacher_kl_coef` (effective coefficient), and `teacher_kl_penalty` (coefficient times KL), averaged over the upload's environment samples. Evaluation logs include `eval_samples/teacher_mean_score`, `teacher_source_samples`, and `teacher_updated` (1 on replacement, 0 otherwise). Before initialization, the effective coefficient is zero.
+The no-teacher small run peaks at **125.55 at 275M**, then ends at **71.62 at 575M**. D scores **120.82 at the same 575M point**, a **49.20-point** difference, and later reaches **131.90**, with last eval **131.55**. Its teacher is replaced **14 times**, including initialization. D still has regressions, notably **93.19 at 650M**; the penalty is not a monotonic-performance guarantee.
 
-Launch D only from PowerShell:
+**Attribution remains limited.** The first eval already differs before KL has been applied (**14.94 without teacher vs 20.19 in D**). The runs share nominal configuration and seed, but are not identical pre-intervention trajectories. Consequently, the higher score and better observed retention in D support further investigation of teacher KL, rather than proving that KL alone caused the full improvement.
+
+![E004 teacher diagnostics](docs/analysis/figures/e004_teacher_diagnostics.png)
+
+The small no-teacher run's entropy is about **0.0200** at its 275M peak and **0.0232** at 575M. Thus its late regression cannot be summarized as entropy simply decreasing to zero. At 575M, D has entropy about **0.0356**, value loss **0.120**, and critic explained variance **0.972**, compared with **0.0232 / 0.215 / 0.959** without a teacher. These are correlated diagnostic differences, not an identified causal chain. Teacher KL is separate from PPO approximate KL; loss-term magnitudes do not measure their gradient influence.
+
+**Conclusion:** the entity base and teacher-regularized small trajectories exceed the MLP range in held-out eval. Base is the strongest observed architecture candidate at 400M; teacher KL is a promising retention direction for small. Complete-run stability and clean causal attribution remain unresolved.
+
+## What to take forward
+
+1. Use **large-batch, epoch-1** as the main MLP reference under the current LR; avoid assuming that rollout growth or more epochs will improve it.
+2. Keep the **entity base** as a high-score candidate, but obtain a full-budget trajectory before calling its late performance stable. Its current history is incomplete.
+3. If the next question is the isolated effect of teacher KL, compare matched initial training states and retain pre-KL trajectory checks. D is encouraging, but the current two runs cannot attribute all of the improvement to the regularizer.
+4. At high average scores, log **per-episode eval scores and termination/truncation outcomes** if tail behavior matters. Current mean/std/min/max cannot recover a win rate or paired episode differences. D's last eval still includes a minimum score of 2 despite its 131.55 mean.
+
+## Evidence, limits and reproduction
+
+The export uses W&B **`scan_history(keys=None, use_cache=False)`**, rather than the sampled history used by charts. Configs, summaries, compressed full metric histories and a SHA-256 inventory are downloaded under **`analysis/wandb/raw/`** locally; raw archives are Git-ignored. This is a metric/config export, not a download of model checkpoints or all W&B artifacts. Portable reviewed data and figures are under [docs/analysis](docs/analysis/run-catalog.md). The [methods and validation record](docs/analysis/methods.md) defines calculations, scope, source links and checks.
+
+The one-seed design is deliberate. The 1,024 evaluation games do not substitute for independent training repetitions, and the same eval seeds are reused for stopping and teacher selection. Evaluation is held out from PPO transitions, but it also acts as a validation set for those decisions; there is no fresh test-set confirmation of selected peaks. No confidence bands, significance claims or rliable training-seed uncertainty estimates are invented from these trajectories. These reporting choices follow the concerns discussed in [Empirical Design in Reinforcement Learning](https://arxiv.org/abs/2304.01315), [Deep Reinforcement Learning that Matters](https://arxiv.org/abs/1709.06560), and [Rliable's evaluation explanation](https://araffin.github.io/post/rliable/).
+
+Reproduce the download and analysis using existing W&B credentials (do not place API keys in source files):
+
+```powershell
+# Export: the base Python has the W&B SDK.
+& 'C:/Users/Liuluotu/Anaconda/anaconda3/python.exe' scripts/export_wandb_runs.py
+
+# Analyze/render: orbit_wars has a compatible NumPy/pandas/Matplotlib stack.
+& 'C:/Users/Liuluotu/Anaconda/anaconda3/envs/orbit_wars/python.exe' scripts/analyze_wandb_runs.py
+& 'C:/Users/Liuluotu/Anaconda/anaconda3/envs/orbit_wars/python.exe' scripts/build_experiment_readme.py
+```
+
+`export_wandb_runs.py --refresh` fetches all histories again; by default unchanged, fully exported runs are cached. New runs require reviewing the conclusions as well as regenerating tables. The analysis verifies archive hashes, row counts, unique history steps, sample clocks, score bounds, summary coverage, optimizer-step accounting and D's teacher-update rule. An interrupted export does not create fabricated observations. If W&B requires a proxy, use the numeric proxy port in that command's environment; the scripts do not change system network settings.
+
+## Run the current experiments
+
+The active E004 configs are [A–D](config/experiments/feature_architecture). These are configs for new runs; historical W&B identities remain as documented above. For example, start **D only**:
 
 ```powershell
 $env:LIBTORCH = 'C:\Users\Liuluotu\Anaconda\anaconda3\envs\orbit_wars\Lib\site-packages\torch'
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -StartAt D -Only
 ```
 
-The sweep discovers A-D automatically. Benchmark mode activates a frozen initial-student snapshot immediately to measure teacher overhead without waiting for 25M samples; it runs no evaluation and writes no formal checkpoints. This benchmark snapshot is identified in its JSON report.
-
-### A: Original features with CNN
-
-CNN v1 uses three 3x3 convolutions with padding 1, ReLU after each, followed by a 256-unit projection and the existing linear policy/value heads:
-
-```mermaid
-flowchart TD
-    X["Original flat features: N x 432"] --> R["Reshape: N x 3 x 12 x 12"]
-    R --> C1["Conv 3 to 16, stride 2 + ReLU: N x 16 x 6 x 6"]
-    C1 --> C2["Conv 16 to 32, stride 2 + ReLU: N x 32 x 3 x 3"]
-    C2 --> C3["Conv 32 to 64, stride 1 + ReLU: N x 64 x 3 x 3"]
-    C3 --> F["Flatten: N x 576"]
-    F --> H["Linear 576 to 256 + ReLU"]
-    H --> P["Policy: Linear 256 to 4 logits"]
-    H --> V["Value: Linear 256 to 1"]
-```
-
-On the 12x12 board, CNN v1 has **172,581 parameters** versus **177,925** for the original MLP. This keeps parameter counts close, although compute costs and spatial structure differ. The final convolution's nominal receptive field is 15x15, and the dense projection combines all spatial positions. Dimensions are derived from the configured board size. There is no batch normalization, dropout, or change to the PPO optimizer/loss implementation.
-
-The first configuration is [config/experiments/feature_architecture/A.yaml](config/experiments/feature_architecture/A.yaml). It logs to W&B group `E004 feature architecture`, run `E004 feature architecture exp-A`, with checkpoints in `checkpoints/E004_feature_architecture_exp-A/`. Load a CNN checkpoint with the same model version, board dimensions, and hidden size; existing MLP weights cannot initialize this different architecture.
-
-### B and C: Cell, Snake, Food and Global tokens
-
-Both Transformers use the same **147-token** sequence:
-
-| Type | Count | Raw input dimensions | Role |
-| --- | ---: | ---: | --- |
-| Cell | 144 | 66 | Occupancy, geometry, body order and static topology |
-| Snake | 1 | 21 | State-conditioned actor readout |
-| Food | 1 | 24 | Explicit target and target-region information |
-| Global | 1 | 8 | State-conditioned critic readout |
-
-The flat observation contains **9,557 values**: 66 channel-major cell planes, followed by the three context vectors (21+24+8). Context vectors are not duplicated across cells or padded to 66 dimensions. Four independent ReLU input MLPs project the token types to the selected encoder width.
-
-#### Cell feature layout
-
-Let A=W*H and L be snake length. For head-first segment index i, release time t=L-i: tail=1, head=L. This is the earliest release time under **no future growth**, not a prediction of a cell staying free forever. Non-snake cells have all release features zero.
-
-| Channels | Features | Encoding |
-| --- | --- | --- |
-| 0-4 | Head, ordinary body, food, empty, tail | Exclusive one-hot; ordinary body excludes both head and tail |
-| 5 | Release time | t/A |
-| 6-22 | Exact near-term release | t=1..16 one-hot, plus t>16 overflow |
-| 23-31 | Logarithmic release two-hot | Interpolation in log-space between [1,2,4,8,16,32,64,128,144] on 12x12 |
-| 32-33 | Absolute x, y | Divide by max(W-1,1), max(H-1,1) |
-| 34-35 | Ego x, y | Head-centered coordinates, rotated so heading is up; divide by max(max(W,H)-1,1) |
-| 36-51 | Ego Fourier position | For f=1,2,4,8: sin/cos(pi*f*dx'/max(W,H)), then sin/cos(pi*f*dy'/max(W,H)) |
-| 52-55 | Link toward the head | Ego up/down/left/right one-hot |
-| 56-59 | Link toward the tail | Ego up/down/left/right one-hot |
-| 60-61 (B and C) | Region size | size/A, log(1+size)/log(1+A) |
-| 62-63 (B and C) | Region size versus length | min(size/L,2), size>=L |
-| 64-65 (B and C) | Tail/head adjacency | Region contains a passable cell adjacent to tail/head |
-
-The ego frame rotates geometry and chain directions consistently. The action space remains four absolute directions; the Snake token's absolute heading provides the mapping. Learned absolute cell positions are retained, so the full network is not rotation-invariant. Missing links at the head/tail are zero.
-
-For other board sizes, release nodes are the powers 1..128 strictly below A followed by A, with unused slots zero. This retains nine input slots and avoids duplicated or unsorted endpoints. Length nodes follow the analogous filtering rule below. A dimension of one has absolute coordinate zero; rectangular ego coordinates use the longer side for normalization.
-
-Regions use a four-neighbor graph containing unoccupied cells (**including food**) and the **current tail cell**, blocking the head and remaining body. A single flood fill labels components. Blocked cells have zero region features. Tail/head adjacency means a region contains a cell one step from the respective endpoint; it does not mean the endpoint itself is an ordinary empty cell. These features are a static, optimistic tail-open snapshot: region size, connection to the tail and size>=L are **not safety guarantees**. Moving/growing bodies and newly formed loops can invalidate static reasoning. No time-aware BFS, articulation points, action masks or reward changes are included.
-
-#### Context feature layouts
-
-| Token | Indices | Features |
-| --- | --- | --- |
-| Snake | 0-1 | L/A, log(L)/log(A) |
-| Snake | 2-10 | Linear two-hot on [3,5,10,20,40,60,90,120,144]; on other boards filter nodes below A, append A, pad unused slots |
-| Snake | 11-12 | (A-L)/A, log(1+A-L)/log(1+A) |
-| Snake | 13-16 | Absolute heading: up/down/left/right one-hot |
-| Snake | 17-18 | Absolute head x/y |
-| Snake | 19-20 | Largest head-adjacent component: size/A, min(size/L,2); zero if none |
-| Food | 0 | Food exists; all Food features are zero if absent |
-| Food | 1-2 | Absolute food x/y |
-| Food | 3-20 | Food ego position and Fourier encoding, same 18 values as Cell channels 34-51 |
-| Food | 21-23 | Food component size/A, min(size/L,2), head-adjacent flag |
-| Global | 0-2 | L/A, (A-L)/A, log(1+A-L)/log(1+A) |
-| Global | 3-7 | Component count 1..4 one-hot plus >=5; zero components gives all zero |
-
-The environment has no starvation timer, training episode time limit or per-step penalty, so there are no hunger, food-age or remaining-time inputs. The evaluation-only 5,000-step cap is unchanged. The original three binary planes are **not** a compatible prefix: body/tail occupancy changed, and heterogeneous context follows the planes. Legacy teachers are rejected by config validation for these versions; The active B/C experiments do not use a teacher.
-
-#### Network and execution
-
-The small input MLP is Linear(input,32), ReLU, Linear(32,16), ReLU; the base MLP is Linear(input,64), ReLU, Linear(64,32), ReLU. Each model has four learned type embeddings and learned absolute cell positions. Both use two attention heads, pre-norm encoder blocks, GELU FFNs with width twice the embedding dimension, residuals, no dropout and no attention mask.
-
-Small has two width-16 blocks (head dimension 8; FFN16->32->16); base has three width-32 blocks (head dimension 16; FFN32->64->32). Intermediate layers update all 147 tokens. Only the final layer evaluates the Snake and Global query rows against all 147 updated keys/values. Final LayerNorm and a shared embedding-width->256 ReLU projection precede the actor's four logits and critic's scalar value. Actor and critic read Snake and Global respectively.
-
-```mermaid
-flowchart TD
-    X["Shared Cell / Snake / Food / Global features"] --> B["B: four input to 32 to 16 MLPs + type / position embeddings"]
-    X --> C["C: four input to 64 to 32 MLPs + type / position embeddings"]
-    B --> B1["Encoder1: all147 tokens, width16"]
-    B1 --> B2["Encoder2: Snake / Global queries, all147 keys and values"]
-    C --> C1["Encoder1 and Encoder2: all147 tokens, width32"]
-    C1 --> C2["Encoder3: Snake / Global queries, all147 keys and values"]
-    B2 --> H["Final norm + projection to256"]
-    C2 --> H
-    H --> P["Snake actor: four logits"]
-    H --> V["Global critic: one value"]
-```
-
-CUDA parameters, projections and PPO remain FP32; attention Q/K/V use BF16 SDPA. The installed Windows runtime selects **memory-efficient SDPA**, not CUDA FlashAttention. Startup reports each layer's actual backend and query count: small147/2, base147/147/2. The code loads `torch_cuda.dll` before selecting CUDA. The project uses tch0.24 with the installed PyTorch/LibTorch2.11 CUDA runtime; the older 2.7 CPU libraries are incompatible.
-
-#### Memory and feature computation
-
-The FP32 rollout observations occupy about **2.92 GiB of host RAM** at R=81,920. PPO uploads only the current mini-batch (about **0.365 GiB of input observations** at batch10,240), avoiding a complete rollout copy on GPU. Activations, gradients, workspaces and allocator reservations require additional GPU memory.
-
-For board area A, length L<=A and cell channel count C=66, body indexing is O(A+L), four-neighbor connected components are O(A), and filling the complete features is O(A*C). Flood fill runs once per state. Board-size-keyed thread-local tables cache coordinates, Fourier values, release/length expansions and logarithms. Components compute their attributes once; scratch buffers are reused, and independent environments encode into disjoint output slices in parallel. These optimizations preserve feature values and PPO update rules.
-
-Reference short benchmarks on the RTX5070Ti Laptop used one warmup and two measured full rollouts at the actual batch/rollout size. The small architecture measured **37,826 collection samples/s** and **16,847 samples/s including bootstrap/PPO**, with sampled whole-device peak6,794MiB from baseline1,624MiB. The base architecture previously measured **31,765 / 13,598 samples/s**, with peak10,834MiB from baseline1,142MiB. Background usage differed, so these are not strictly paired measurements or a guaranteed speedup ratio. They exclude periodic evaluation/checkpointing and do not establish score performance.
-
-The whole 66-channel CPU encoding measured approximately4.6-5.2 microseconds/state on fixed 12x12 fixtures after caching. To repeat the CPU-only benchmark:
-
-```powershell
-cargo run --release --example benchmark_features -- target/benchmarks/features.json 10000
-```
-
-BF16 parameter storage alone saves little for these small models. Full BF16 mixed precision could reduce activations but is not enabled; only attention already uses BF16. See the [PyTorch mixed precision documentation](https://docs.pytorch.org/docs/2.11/amp.html).
-
-#### Launch and inference
-
-Set the matching runtime, preview the active sweep, or launch a single configuration:
-
-```powershell
-$env:LIBTORCH = 'C:\Users\Liuluotu\Anaconda\anaconda3\envs\orbit_wars\Lib\site-packages\torch'
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -StartAt B -Only
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -StartAt C -Only
-```
-
-The sweep discovers A, B, C and D. Without `-Only`, starting at B runs B, C and D. It builds once and inspects actual configured checkpoint folders, refusing existing `latest.ot` unless `-AllowExistingCheckpoints` explicitly authorizes a fresh rerun. It does not resume training. Existing experiment checkpoints are not removed by changing the active study.
-
-Benchmark a selected architecture without W&B or formal checkpoint writes:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_feature_architecture.ps1 -StartAt C -Only -Benchmark -BenchmarkDevice cuda
-```
-
-Use the selected model version consistently for training, evaluation and visual inference. The existing [config/infer-B-v7.yaml](config/infer-B-v7.yaml) filename is retained for the user's playback command; its contents now select `transformer_v1_small`, with the selected snapshot under `checkpoints/E004_feature_architecture_exp-B/`. Edit its `inference.model_path` and `fps` to select a checkpoint and playback speed.
-
-## Sample-based training and stopping
-
-The YAML uses environment samples for the training cap, checkpoint interval, evaluation interval, and W&B upload interval. Early stopping counts evaluations. The outer PPO iteration remains an internal loop counter. A run can exceed its configured sample cap by less than one rollout `R`, because an update consumes a complete rollout.
-
-All six ready-to-run configurations are in [config/experiments/batch_rollout](config/experiments/batch_rollout). Pass the desired experiment file explicitly. To launch group C:
-
-```powershell
-cargo run --release -- --config config/experiments/batch_rollout/C.yaml
-```
-
-Early stopping follows the deterministic evaluation mean score. Evaluation runs every **25M environment samples** on the same **1,024 held-out seeds**, starting at `seed + 1,000,003`; the training environments start at `seed` and use at most 1,280 distinct initial seeds in this study. Each new strict high resets the counter; **12 consecutive evaluations without a new high** stop training (approximately 300M further samples). The 1,200M sample cap remains the maximum. This rule is an experimental heuristic and may miss a later rebound; an early stop does not establish a performance ceiling.
-
-Periodic and final checkpoints save `checkpoints/<safe_run_name>/samples-<total_samples>.ot` and `latest.ot` (for example, `checkpoints/E001_batch_rollout_scale_exp-C/latest.ot`). No checkpoint is selected as the best model. Evaluation uses 1,024 deterministic episodes with the same evaluation seeds at every checkpoint and across groups, capped at 5,000 steps per episode. Checkpoints are scheduled every 50M environment samples; evaluation is scheduled every 25M.
-
-Evaluation uses the **same model and device as training** (CUDA for B/C). `evaluation.batch_size` defaults to **1,024** for old configurations and is explicit in B:
-
-```yaml
-evaluation:
-  interval_samples: 25000000
-  episodes: 1024
-  batch_size: 1024
-  deterministic: true
-  max_steps_per_episode: 5000
-```
-
-All **1,024** held-out games start together. Each step encodes the active states into one observation batch, runs one GPU forward pass and copies the action vector to CPU once. Finished games leave the active batch and are never reset or counted twice; remaining games stop at their individual step limit. Thus **1,024** is the maximum inference batch size, which shrinks as episodes finish. If episodes exceed the configured batch size, subsequent cohorts cover the remaining episode IDs, including a partial final cohort. Every episode retains seed `seed + 1,000,003 + episode_index` and the same score/statistical weight. Training rollout/mini-batch sizes and early-stop criteria are unchanged. Periodic evaluation logs report the device and effective initial batch size. Batched floating-point kernels may change near-tied deterministic decisions; stochastic evaluation also changes random-draw ordering compared with serial evaluation.
-
-To run groups A–F sequentially on Windows, preview the sweep, check the runtime dependencies without starting training, and then launch:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout.ps1 -CheckRuntime
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sweep_batch_rollout.ps1
-```
-
-The script builds once and adds the bundled LibTorch DLL directory to `PATH` before starting the release binary. The `usage` line printed during `-CheckRuntime` is expected. The sweep stops if a group fails. Use `-StartAt D` to start from D through F. It refuses to run when a selected group's `latest.ot` already exists; use `-AllowExistingCheckpoints` only when intentionally rerunning that group, because its checkpoint files will be overwritten.
-
-## W&B metrics
-
-The six runs share W&B group `E001 batch rollout scale`, with run names `E001 batch rollout scale exp-A` through `exp-F`. All W&B curves use `total_samples` as the x-axis. There is no `recent_samples/*` group or iteration-axis duplicate.
-
-- `train_samples/mean_episode_score`, `std_episode_score`, `min_episode_score`, and `max_episode_score` describe the **most recent 1,024 completed games**. This is a rolling episode window. Before the first completed game, these fields are omitted. `score_window_episode_count` shows how many games currently fill the window.
-- Other `train_samples/*` diagnostics are pooled or sample-weighted over the roughly **1M environment samples since the previous upload**. `completed_episode_count` counts games completed during that upload interval, while `window_samples` reports its actual size. These counts do not define the rolling score window.
-- `eval_samples/mean_score`, `std_score`, `min_score`, and `max_score` describe the fixed-seed evaluation episodes. `best_mean_score`, `stale_evaluations`, and `early_stop_triggered` show the evaluation-based stopping state. There is no separate `early_stop_samples/*` window group.
-
-PPO diagnostics include positive policy `entropy` (not entropy loss), `policy_loss`, `value_loss`, `total_loss`, `critic_explained_variance`, `policy_approx_kl`, and `clip_fraction`. The `raw_adv_mean/std` values are GAE advantages **before** normalization; `return_mean/std` describe the value targets. `reverse_action_rate` counts requested reverse actions, which the environment ignores. Cumulative optimizer steps, wall time, and sample throughput help compare compute costs. Approximate KL and clip fraction are measured before each mini-batch optimizer step; they are not full-rollout post-update diagnostics.
-
-## Setup (Windows)
-
-1. Install the stable Rust toolchain with the MSVC target.
-2. For GPU training, install an NVIDIA driver and a CUDA runtime compatible with LibTorch.
-3. Set `LIBTORCH` to a PyTorch/LibTorch **2.11.0** installation compatible with `tch = 0.24`, and add its `lib` directory to `PATH`. For this machine, reuse `C:\Users\Liuluotu\Anaconda\anaconda3\envs\orbit_wars\Lib\site-packages\torch`. The project's `download-libtorch` feature remains available for a matching CPU runtime; the old 2.7 runtime is incompatible with the upgraded bindings.
-4. Install the W&B Python SDK with `C:\Users\Liuluotu\Anaconda\anaconda3\python.exe -m pip install "wandb>=0.22.3"`. Configure `WANDB_API_KEY` or run `wandb login` for online logging.
-
-If online W&B access needs an HTTP proxy, set `HTTP_PROXY` and `HTTPS_PROXY` in the same PowerShell window used to launch the sweep. Use the numeric HTTP or mixed port configured in your proxy application. The child PowerShell, Rust trainer, and Python bridge inherit these environment variables. A proxy URL must contain a real numeric port, not placeholder text. Alternatively, set the experiment YAML's `wandb.mode` to `offline` to keep local metrics for later synchronization.
-
-Eating one food item gives reward `1.0`; all other outcomes, including death, give `0.0`.
-
-## Visual inference
-
-Set `mode: infer` and choose `inference.model_path` in a YAML config, then run the program with that config. The window displays the snake, food, current score, and best score; close it to exit.
-
-To watch B's small model, use [config/infer-B-v7.yaml](config/infer-B-v7.yaml). It selects `transformer_v1_small`, CUDA and deterministic actions, with W&B disabled. Its checkpoint and playback speed follow `inference.model_path` and `inference.fps`:
-
-```powershell
-$env:LIBTORCH = 'C:\Users\Liuluotu\Anaconda\anaconda3\envs\orbit_wars\Lib\site-packages\torch'
-$env:PATH = "$env:LIBTORCH\lib;$env:PATH"
-cargo run --release -- --config config/infer-B-v7.yaml
-```
-
-Games restart after termination. Inference reads weights without optimizer updates or checkpoint writes.
-
-## Verification
+Change `D` to `B` or `C` to select small or base. The sweep protects existing `latest.ot` files; `-AllowExistingCheckpoints` permits a fresh rerun, not a resume. CUDA uses the installed **memory-efficient BF16 SDPA** backend; it is not compiled CUDA FlashAttention. Full feature layouts, architecture diagrams, inference instructions and Windows setup are in the [technical guide](docs/technical-guide.md).
 
 ```powershell
 cargo fmt --all -- --check

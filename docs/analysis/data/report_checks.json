@@ -1,0 +1,14 @@
+{
+  "scripts": [
+    "export_wandb_runs.py",
+    "analyze_wandb_runs.py",
+    "build_experiment_readme.py"
+  ],
+  "missing_links": [],
+  "image_count": 43,
+  "run_count": 32,
+  "independent_numeric_checks": 160,
+  "ema_hand_check": "[0,10,0] at [0,25M,50M] -> [0,5,2.5]",
+  "continuous_history_rows": 26717,
+  "visual_review": "Inspected representative E001/E002/E003/E004 comparison figures, diagnostics and a per-run chart; all 43 PNGs decoded."
+}
