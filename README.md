@@ -15,6 +15,19 @@ This report covers **32 W&B runs and 26,717 complete metric-history rows**, down
 
 The [per-run catalog](docs/analysis/run-catalog.md) includes the design, plot, result and interpretation for **every run**. Exact numbers and logged configurations are available in [run_results.csv](docs/analysis/data/run_results.csv), [eval_history.csv](docs/analysis/data/eval_history.csv), and [run_configs.json](docs/analysis/data/run_configs.json). Implementation details and feature layouts are in the [technical guide](docs/technical-guide.md).
 
+## Four experiment groups
+
+Each group below contains its **experiment design, result tables, comparison figures, analysis and group summary** directly in this README. The per-run catalog provides additional detail rather than replacing the group-level analysis.
+
+| Group | Experiment question | Runs in this snapshot | Main controlled comparison |
+| --- | --- | --- | --- |
+| [E001 — Batch and rollout](#e001) | Does performance improve with mini-batch size, rollout size, or both? | 6 | Joint scaling plus fixed-rollout and fixed-mini-batch comparisons |
+| [E002 — PPO epochs](#e002) | Does reusing each rollout for more epochs improve learning? | 9 new runs + 3 reused E001 baselines | Epochs 1/2/4/8 at each A/B/C scale |
+| [E003 — Scale switching](#e003) | Can a trained policy recover or retain strength after its scale changes? | 12 | A→B, A→C, B→C and C→B at three source-specific times |
+| [E004 — Features, architecture and teacher KL](#e004) | Can richer models exceed the MLP range and retain high scores? | 5 | CNN, historical grid Transformer, entity small/base, and small + teacher KL |
+
+E002 reuses the three epoch-1 E001 runs as references; they are not counted again among the 32 unique runs. E004 has five historical runs because the original `exp-B` and later `exp-B-v7` are different model experiments, although the current runnable configs are A–D.
+
 ## How to read the comparisons
 
 The primary strength metric is **held-out deterministic `eval_samples/mean_score`**, measured on the same **1,024 evaluation seeds**, with a 5,000-step cap per game. Stochastic training scores use the latest 1,024 completed training games; they help diagnose learning but are not interchangeable with eval.
@@ -25,9 +38,15 @@ Evaluation curves below are **raw and unsmoothed**. Training diagnostic plots sh
 
 Shared PPO settings are LR **3e-4**, gamma **0.99**, GAE lambda **0.95**, clipping range **0.2**, value coefficient **1**, entropy coefficient **0.001**, and rollout horizon **64**. The MLP has two 256-unit hidden layers and the original head/body/food planes. Evaluation is scheduled every **25M** samples; **12 consecutive evaluations without a strict new high** trigger early stopping. The cap is **1,200M new samples**, with a possible overshoot below one rollout. Early stopping is a budget heuristic, not evidence of an irreversible ceiling.
 
+<a id="e001"></a>
+
 ## E001 — Mini-batch and rollout size
 
+### Experiment design
+
 **Question.** Does the benefit of increasing the joint training scale come from mini-batch size `b`, rollout size `R`, or both? `R = num_envs × 64`. A/B/C keep `R/b=8`. D/E/F provide comparisons that hold one factor fixed. All use one PPO epoch and the same MLP.
+
+### Results and analysis
 
 | Run | Mini-batch b | Rollout R | Envs | Eval @300M | Eval @600M | Last eval | Last 4 evals | Best eval (at M) | End M / reason |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -38,13 +57,13 @@ Shared PPO settings are LR **3e-4**, gamma **0.99**, GAE lambda **0.95**, clippi
 | [E](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/ywj4sihn) | 1,024 | 81,920 | 1,280 | 62.82 | 77.06 | 98.21 | 84.71 | 101.03 (825) | 1125 / eval early stop |
 | [F](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/9ag8xl46) | 10,240 | 20,480 | 320 | 76.70 | 87.74 | 96.64 | 97.17 | 99.58 (1125) | 1200 / sample cap |
 
-### Joint scale: A, B and C
+#### Joint scale: A, B and C
 
 ![E001 joint scaling](docs/analysis/figures/e001_joint_scale.png)
 
 At the common **300M** budget, A/B/C score **58.03 / 78.38 / 86.44**. At **600M**, B and C are much closer (**95.23 vs 95.87**), while A remains lower. Larger scale is associated with a higher late score range, but its advantage changes with training time. The data do not show that every point on the larger-scale curve is better.
 
-### Holding rollout fixed
+#### Holding rollout fixed
 
 ![E001 fixed rollout](docs/analysis/figures/e001_fixed_rollout.png)
 
@@ -53,23 +72,33 @@ At the common **300M** budget, A/B/C score **58.03 / 78.38 / 86.44**. At **600M*
 
 These comparisons support a mini-batch contribution under the fixed learning rate and optimizer used here. They do **not** isolate gradient variance as the mechanism: at fixed samples, a smaller mini-batch also performs more Adam steps (`steps ≈ samples × epochs / b`).
 
-### Holding mini-batch fixed
+#### Holding mini-batch fixed
 
 ![E001 fixed mini-batch](docs/analysis/figures/e001_fixed_batch.png)
 
 Increasing R is not uniformly helpful. A→D at `b=256` does not raise the observed best score, and B→E at `b=1,024` learns more slowly through much of the curve. At `b=10,240`, C's larger rollout finishes at **103.24** versus F's **96.64** at the same 1,200M budget. Rollout effects depend on mini-batch size. Changing R here also changes the number of parallel environments, so it combines policy-refresh frequency and trajectory-diversity effects.
 
-### Diagnostics and conclusion
+#### Training diagnostics
 
 ![E001 training diagnostics](docs/analysis/figures/e001_diagnostics.png)
 
 In the common **500–600M** window, mean value loss is approximately **0.154 / 0.109 / 0.090** for A/B/C; entropy is **0.0186 / 0.0229 / 0.0345**, and raw advantage std is **0.398 / 0.332 / 0.300**. This is consistent with lower value-target error and more stochastic policies at larger scale. These measurements use different learned state distributions and are not a causal explanation. Approximate KL is also not uniformly lower for larger batches.
 
-**Conclusion:** with this fixed-LR, epoch-1 protocol, increasing mini-batch size is a stronger and more consistent direction than increasing rollout alone. The factorial comparisons support that distinction. The available sample budget and early stopping do not prove an absolute, irrecoverable performance ceiling.
+### Group summary
+
+- **What the results support:** under this fixed-LR, epoch-1 protocol, mini-batch growth is a stronger and more consistent direction than rollout growth alone. At 600M and fixed R, B exceeds D by **47.08** points, and C exceeds E by **18.82** points. These comparisons strengthen the batch-size interpretation beyond the coupled A/B/C curves.
+- **What depends on the configuration:** rollout growth helps at `b=10,240` in C versus F, but does not consistently help at `b=256` or `1,024`. Neither factor has a uniformly beneficial effect across all settings and training times.
+- **What this establishes for the next experiment:** C is the strongest observed MLP reference for this protocol, with a last-four mean of **106.19**, compared with **97.82** for B and **61.69** for A. This is a finite-budget result. It does not prove an absolute ceiling, an infinite-sample batch ordering, or a universal scaling law; smaller batches also take more optimizer steps per sample at the same LR.
+
+<a id="e002"></a>
 
 ## E002 — PPO epochs
 
+### Experiment design
+
 **Question.** How much can each rollout be reused before more optimizer updates become harmful? Each A/B/C baseline from E001 is compared with **2, 4 and 8 epochs**, with its mini-batch, rollout, learning rate and model unchanged. More epochs multiply optimizer work per environment sample, so this is a sample-budget comparison, not equal compute.
+
+### Results and analysis
 
 | Scale / epochs | Eval @300M | Last eval | Last 4 evals | Best eval | End M | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -90,7 +119,7 @@ In the common **500–600M** window, mean value loss is approximately **0.154 / 
 
 **A:** two epochs slightly improve the 300M score (**61.98 vs 58.03**) but later regress; four and eight epochs perform poorly. **B:** all tested epoch increases are worse than epoch 1 at the common 300M point; eight epochs ends near score 1. **C:** two and four epochs achieve roughly the same late score range as epoch 1. Epoch 2 has a higher last eval (**107.87 vs 103.24**), while its last-four mean (**105.63**) is slightly below epoch 1 (**106.19**). The ranking depends on which point is selected. Eight epochs eventually regresses substantially.
 
-### What the A-epoch-2 collapse does and does not show
+#### What the A-epoch-2 collapse does and does not show
 
 ![A epoch 2 collapse diagnostics](docs/analysis/figures/e002_collapse.png)
 
@@ -98,13 +127,23 @@ The eval mean drops from **48.03 at 700M** to **13.99 at 750M**, then partly rec
 
 The joint pattern is **consistent with excessive policy updating and a deteriorating critic interacting**, but it does not establish which process initiated the regression. PPO's clipping objective is not a hard KL bound, and these logged KL estimates are pre-mini-batch diagnostics, not full-rollout post-update distances. Proving a mechanism would require additional measurements or a controlled change.
 
-**Conclusion:** retain epoch 1 as the conservative baseline for A/B. C tolerates moderate reuse, but these runs do not establish a robust late-score gain from epochs 2–4. An epoch increase without controlling learning rate or policy movement is not a free scaling improvement.
+### Group summary
+
+- **Small and medium scales are sensitive to reuse.** A's epoch-2 run can look better early, yet regress later; A/B with eight epochs end near score 1. The complete curves therefore give a different answer from selecting an early favorable point.
+- **Large scale tolerates more reuse, with limited observed gain.** C's last-four means are **106.19 / 105.63 / 104.35** for epochs 1/2/4. The scores are similar while optimizer work per sample increases by 2× or 4×. Epoch 8 eventually regresses even at C.
+- **The experimental conclusion concerns epochs at the unchanged LR.** The diagnostic pattern is consistent with overly aggressive repeated updates, but does not identify a single collapse cause. Epoch 1 remains the conservative A/B baseline; these runs do not establish a reliable late-score benefit from C's moderate reuse. They also do not show that additional epochs would fail after appropriate LR or policy-movement control.
+
+<a id="e003"></a>
 
 ## E003 — Switching the complete batch/rollout scale
+
+### Experiment design
 
 **Question.** Can a policy trained at one scale recover or retain performance after the scale changes? Each branch loads an existing weights-only checkpoint, **resets Adam**, and switches the complete A/B/C scale while retaining `R/b=8`. A→B and A→C use nominal switch points **100/300/550M**; B→C uses **200/500/850M**; C→B uses **150/450/850M**. These points were chosen separately for the source curves, not as universal early/middle/late fractions.
 
 Every branch has up to **1,200M additional** samples, with the same eval-based early stopping. There is no 300M hard cap. The initial evaluation at the switch is included. Actual source counts can differ from nominal names by less than one source rollout.
+
+### Results and analysis
 
 | Schedule | At switch | After +300M | Last eval | Last 4 evals | Best eval | End M: total / additional |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -132,13 +171,24 @@ The first plot charges pretraining to the total sample clock. The second shows a
 - **B→C:** the 500M switch reaches **110.61**, close to C-from-scratch's best **110.65**, and ends at **108.12**. The 850M switch reaches **107.42** after a shorter adaptation. Medium-scale pretraining can therefore be followed by strong large-scale performance in this sample.
 - **C→B:** lowering the scale does not immediately erase high performance. The 850M branch ends at **105.31**, whereas the 450M branch falls from **100.13** initially to **93.82**, stops after +300M, and never exceeds its initial evaluation.
 
-**Conclusion:** the attained policy depends on its training path as well as its current scale. Recovery is observed, but it is not guaranteed within a fixed continuation budget. Because same-scale Adam-reset controls were deliberately not run, these comparisons do not isolate the effect of changing scale from optimizer reset. Their endpoints also use different total budgets; this is evidence about schedules, not proof of an optimal switch time or an irreversible small-batch trap.
+### Group summary
+
+- **Increasing scale can recover performance, but does not reset the training history.** The B-500M→C branch reaches **110.61**, whereas the A→C branches remain below C-from-scratch's observed late range despite long continuations. A stronger target scale alone does not guarantee the same outcome as using it from scratch.
+- **Decreasing scale does not necessarily erase an already strong policy.** The C-850M→B branch ends at **105.31**. Together with the upward-switch results, this shows that current batch/rollout settings alone do not describe the observed attainable score.
+- **Timing is not ordered simply as early > middle > late.** A-300M→C outperforms both the 100M and 550M switches in these trajectories. The sampled schedules do not identify a universal optimal switch point or prove that an A-trained policy is permanently unable to recover.
+- **The causal scope is limited.** Every switch also resets Adam, same-scale reset controls were not run, and branches stop at different total budgets. These are schedule-and-reset results, with both total and additional sample clocks shown; they do not isolate the batch-switch effect or establish an equal-compute winning schedule.
+
+<a id="e004"></a>
 
 ## E004 — Features, architecture and evaluation-best teacher KL
+
+### Experiment design
 
 **Question.** Can a better representation/model exceed the MLP score range, and can a frozen best-eval teacher reduce the small model's regression? All logged E004 runs use `b=10,240`, `R=81,920`, epoch 1 and the shared PPO/eval protocol.
 
 **Historical names matter.** The W&B run called `exp-B` is **`transformer_v3`**, an earlier seven-feature grid model. `exp-B-v7` is the entity **small** architecture now named `transformer_v1_small`. The current B YAML selects small; it does not reproduce the historical `exp-B` run. C is the base entity model. D is small plus teacher KL. The report uses the configurations stored with the runs, not today's YAML as a substitute for history.
+
+### Results and analysis
 
 | Run | Logged model version | Experiment | Eval @300M | Last eval | Last 4 evals | Best eval | Logged / eval M | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -165,7 +215,7 @@ The base model reaches **132.94** at 400M, while the MLP is **92.71** at that po
 
 The stronger representations also cost more in these recorded jobs. Logged training wall time is about **3.16 h** for the MLP's 1,200M samples, **10.17 h** for base's 419M, and **17.31 h** for D's 925M. These are observed job times across CPU/CUDA and evolving implementations, not a controlled hardware-speed comparison. Higher score is not synonymous with lower computational cost.
 
-### D: frozen evaluation-best self-teacher
+#### D: frozen evaluation-best self-teacher
 
 Starting from B's small-model configuration, D adds
 
@@ -187,7 +237,12 @@ The no-teacher small run peaks at **125.55 at 275M**, then ends at **71.62 at 57
 
 The small no-teacher run's entropy is about **0.0200** at its 275M peak and **0.0232** at 575M. Thus its late regression cannot be summarized as entropy simply decreasing to zero. At 575M, D has entropy about **0.0356**, value loss **0.120**, and critic explained variance **0.972**, compared with **0.0232 / 0.215 / 0.959** without a teacher. These are correlated diagnostic differences, not an identified causal chain. Teacher KL is separate from PPO approximate KL; loss-term magnitudes do not measure their gradient influence.
 
-**Conclusion:** the entity base and teacher-regularized small trajectories exceed the MLP range in held-out eval. Base is the strongest observed architecture candidate at 400M; teacher KL is a promising retention direction for small. Complete-run stability and clean causal attribution remain unresolved.
+### Group summary
+
+- **The observed MLP score range can be exceeded.** The base entity model reaches **132.94 at 400M**, compared with the MLP's **92.71** at the same sample count. The earlier CNN and seven-feature grid Transformer do not provide that improvement. The successful entity experiments change both inputs and architecture, so the gain cannot be assigned to one individual feature or to attention alone.
+- **Peak strength and retention are separate outcomes.** The no-teacher small model reaches **125.55**, then ends at **71.62**. Base also shows a sharp training-score regression after its last recorded eval. High peaks do not demonstrate stable high performance.
+- **Teacher KL is a promising retention result, with unresolved attribution.** D scores **120.82** against small's **71.62** at the matched 575M point and later reaches **131.90**. It still regresses at some checkpoints, and the runs already differ at their first evaluation before KL begins. The result supports the direction without proving that the regularizer caused the full gain.
+- **The practical conclusion remains provisional.** Base is the strongest observed architecture candidate at 400M, and teacher-regularized small is a strong observed retention candidate. C/D are incomplete runs; neither is established as a converged, consistently high-score replacement for the MLP baseline. Their score gains must also be considered alongside the higher recorded training cost.
 
 ## What to take forward
 
