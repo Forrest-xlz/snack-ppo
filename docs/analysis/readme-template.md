@@ -6,7 +6,7 @@ The board is **12×12**, the initial snake length is **3**, and the maximum scor
 
 ## Main results
 
-- **Larger batches achieve higher scores when rollout/batch stays at 8.** A/B/C use batches **256 / 1,024 / 10,240** and reach best scores of **67.94 / 102.48 / 110.65**. Rollout size and environment count grow proportionally with batch size.
+- **Larger batches achieve higher scores.** A/B/C use batches **256 / 1,024 / 10,240** and reach best scores of **67.94 / 102.48 / 110.65**. Rollout size and environment count grow proportionally with batch size.
 - **Increasing rollout/batch at a fixed batch size does not consistently improve scores.** It helps batch 10,240 when the ratio grows from 2 to 8, but not batch 256 or 1,024 in the tested comparisons.
 - **More PPO epochs can learn faster initially, but hurt later scores.** The early speedup is clearest at batch 10,240. Small batches suffer much more from repeated updates; eight epochs causes severe degradation at batch 256 and 1,024.
 - **Switching to a larger batch does not generally recover the score of starting with that batch.** A→B and A→C stay lower, while B-500M→C almost catches up. Early, middle and late switches produce different outcomes.
@@ -109,9 +109,15 @@ All three runs use the baseline MLP, original three-plane features, epoch 1 and 
 
 The comparison measures scaling batch and rollout together at a fixed ratio. It does not separate their individual contributions. At epoch 1, all runs still use each collected transition once, while larger batches reduce the number of optimizer steps per environment sample.
 
+### Author's hypothesis
+
+I suspect that a larger batch raises the model's attainable score plateau, and that simply spending more compute on small-batch training cannot fully make up the gap. In this experiment, the absolute batch and rollout sizes increase together. This may reduce noise in the estimated learning signal and make useful update directions easier to distinguish.
+
+Early in training, a roughly correct decision is enough to improve the score. Near the performance ceiling, the difference between a good action and a slightly better action becomes much smaller, like the tiny margins separating expert players. My interpretation is that late learning needs a finer signal-to-noise resolution. Larger batches and rollouts may reveal these small, consistent advantages that noisy small-batch updates struggle to resolve. The curves motivate this explanation; they do not establish an absolute ceiling or rule out every longer small-batch run.
+
 ### Conclusion
 
-**At rollout/batch = 8, increasing batch size raises the achieved score range, with batch 10,240 producing the highest observed scores.** The improvement from 1,024 to 10,240 is most visible later in training.
+**Increasing batch size raises the achieved score range, with batch 10,240 producing the highest observed scores.** The improvement from 1,024 to 10,240 is most visible later in training.
 
 <a id="e001-rollout"></a>
 
@@ -144,6 +150,12 @@ All runs use the baseline MLP, original three-plane features, epoch 1 and learni
 3. **At batch 10,240, increasing R/b from 2 to 8 helps.** At the shared 1,200M endpoint, ratio 8 scores **103.24**, versus **96.64** for ratio 2. Their best scores are **110.65 vs 99.58**.
 
 Rollout size determines how often a new policy collects fresh data. Here it also changes the number of parallel environments. Its effect depends on the mini-batch size rather than following a simple larger-is-better rule.
+
+### Author's hypothesis
+
+At a fixed batch size, a larger rollout means more optimizer steps within one PPO iteration before collecting fresh data. I suspect that these successive updates can move the current policy increasingly far from the policy that collected the rollout. PPO clipping discourages some large probability-ratio changes, but it does not impose a hard limit on the total policy change or guarantee that each update improves performance.
+
+This could explain why collecting a larger rollout does not necessarily help: later updates within the iteration may be less reliable as the policy changes. Each transition is still used once at epoch 1, and the total number of optimizer steps at a fixed sample budget is approximately unchanged. What changes is how many updates occur before the data-collecting policy is refreshed.
 
 ### Conclusion
 
@@ -192,6 +204,12 @@ The network is unchanged. More epochs repeat optimization over the same rollout.
 ![E002: A epoch-2 collapse](docs/analysis/figures/e002_collapse.png)
 
 A's epoch-2 run illustrates the later instability: eval falls from **48.03 at 700M** to **13.99 at 750M**, before partially recovering. Training scores fall too; raw advantages fluctuate and critic explained variance deteriorates. More epochs apply more updates before fresh data arrives, and the fixed learning rate makes the cumulative policy change larger. These are plausible contributors to the degradation visible in the curves.
+
+### Author's hypothesis
+
+Increasing epochs repeatedly reuses the same rollout, whereas increasing rollout at epoch 1 supplies more distinct transitions. Both increase the number of updates before fresh data arrives, which may move the policy farther from the policy that collected the data. Repeated reuse may also amplify noise specific to that rollout.
+
+I suspect that extra updates help early learning because the policy mainly needs to learn broad decision patterns. Later, when improvements depend on smaller distinctions, the same repeated updates can damage an already strong policy. The larger-batch configurations also collect larger rollouts, potentially providing more useful information and less noisy update directions. Even after several epochs, there may still be meaningful signal to learn from that dataset. This is my explanation for why the negative effect of extra epochs is weaker at the larger batch sizes.
 
 ### Conclusion
 
@@ -244,6 +262,12 @@ The total-sample plot includes pretraining. The additional-sample plot starts at
 | C→B | **97.53** | **93.82** | **105.31** | Late best preserves the stronger source policy |
 
 Switching earlier is therefore not always better. For A→C, the 550M switch stays near the original small-batch score range even after a long continuation. For B→C, more developed source policies transfer better. For C→B, the late checkpoint preserves high scores, while the 450M checkpoint never beats its initial **100.13** and finishes at **93.82**. Branches have different training lengths, shown in the result table, so the timing comparison describes their recorded trajectories.
+
+### Author's hypothesis
+
+I view switching as a change in the parameter-training path, or equivalently, the path along which the policy learns its decisions. Small-batch training may lead the model toward a less effective strategy. By the time the batch is increased, the policy may already have low entropy and rarely visit the alternative behaviors needed to discover a better strategy.
+
+A larger batch can estimate updates more precisely on the states the policy visits, but it does not automatically restore exploration or undo the earlier learning path. This may explain why some small-batch policies fail to catch up after switching, while stronger source policies transfer better. Every switching branch also resets Adam, so the observed path dependence includes that optimizer reset.
 
 ### Conclusion
 
@@ -355,6 +379,14 @@ At matching sample counts:
 **Teacher KL substantially improves stability and the ending score.** At the same 575M point, D scores **120.82**, about **49.20** points higher than small without a teacher. D continues to 925M, reaches a best score of **131.90** and ends at **131.55**. Its curve has temporary drops, including **93.19 at 650M**, but recovers instead of showing the sustained late collapse seen without a teacher. The teacher acts as an anchor to previously successful behavior while the student continues learning.
 
 The recorded base run has its last eval at 400M and training record at 419M. D's last eval is at 925M. Those are the endpoints shown here. Base also has sharp fluctuations in its late training-game scores, so high score and score retention remain separate properties.
+
+### Author's hypothesis
+
+I interpret these results as evidence that the earlier score plateau was partly a limitation of the representation and model's expressive capacity. Richer features expose body order and available space, while entity attention can combine information about distant parts of the snake and board according to the current state. Increasing model size may then make more of that information usable, raising the attainable score further.
+
+My intuition is that the Transformer's flexible interactions support stronger adaptation to the current board, which I associate with a possible meta-learning advantage over the baseline MLP. That is a proposed explanation, rather than a capability measured directly here. The MLP-to-Transformer comparison changes both features and architecture; the small-to-base comparison keeps features fixed and provides the clearer evidence for a model-size benefit.
+
+For teacher KL, I suspect that retaining a successful policy as an anchor limits destructive changes while allowing the student to improve. This offers an explanation for the better score retention, alongside the gains from representation and model size.
 
 ### Conclusion
 
