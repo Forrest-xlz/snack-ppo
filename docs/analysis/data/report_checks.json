@@ -6,7 +6,7 @@
     "readme_sections.py"
   ],
   "missing_links": [],
-  "image_count": 44,
+  "image_count": 43,
   "independent_numeric_checks": 160,
   "continuous_history_rows": 26717,
   "feature_dimensions": {
@@ -30,7 +30,7 @@
     "Entity small": 18533,
     "Entity base": 56357
   },
-  "visual_review": "Updated E004 comparison inspected; obsolete architecture omitted. All 44 archived PNGs decode. Nine active architecture diagrams checked against current code.",
+  "visual_review": "Batch figure compares A/B/C at R/b=8; rollout panels compare A/D (8/32), B/E (8/80), F/C (2/8). Updated figures visually inspected; all 43 archived PNGs decode. Nine architecture diagrams retained.",
   "archive_run_count": 32,
   "report_run_count": 31,
   "cleanup_verification": {
@@ -51,5 +51,36 @@
     "dense_feature_values_per_state": 9557,
     "release_build": "passed",
     "read_only_review": "no actionable issues"
+  },
+  "e001_comparisons": {
+    "batch": {
+      "runs": [
+        "A",
+        "B",
+        "C"
+      ],
+      "fixed_rollout_batch_ratio": 8
+    },
+    "rollout": {
+      "fixed_batch_pairs": [
+        "A/D",
+        "B/E",
+        "F/C"
+      ],
+      "ratios": [
+        [
+          8,
+          32
+        ],
+        [
+          8,
+          80
+        ],
+        [
+          2,
+          8
+        ]
+      ]
+    }
   }
 }

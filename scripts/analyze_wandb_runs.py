@@ -211,25 +211,18 @@ def main():
     for key in "ABC":
         r = baselines[key]
         score_line(ax, r, f"{key}: b={r['config']['ppo']['batch_size']:,}, R={r['R']:,}", GROUP_COLORS[key], STYLES["ABC".index(key)])
-    axes_style(ax, "Joint scaling at fixed R / b = 8", xmax=1200)
+    axes_style(ax, "Batch size at fixed rollout / batch = 8", xmax=1200)
     ax.legend(loc="lower right")
-    save(fig, "e001_joint_scale.png", "E001 - Mini-batch and rollout scaling")
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
-    for ax, pair, title in zip(axes, ["BD", "CE"], ["Fixed R=8,192: b=1,024 vs 256", "Fixed R=81,920: b=10,240 vs 1,024"]):
-        for j, key in enumerate(pair):
-            score_line(ax, baselines[key], key, GROUP_COLORS[key], STYLES[j])
-        axes_style(ax, title, xmax=1200)
-        ax.legend()
-    save(fig, "e001_fixed_rollout.png", "E001 - Mini-batch comparisons at fixed rollout")
+    save(fig, "e001_batch_scale.png", "E001.1 - Batch size at fixed rollout / batch = 8")
 
     fig, axes = plt.subplots(1, 3, figsize=(14.2, 4.7), sharey=True)
     for ax, pair, title in zip(axes, ["AD", "BE", "FC"], ["b=256", "b=1,024", "b=10,240"]):
         for j, key in enumerate(pair):
-            score_line(ax, baselines[key], f"{key}: R={baselines[key]['R']:,}", GROUP_COLORS[key], STYLES[j])
+            ratio = baselines[key]['R'] / baselines[key]['config']['ppo']['batch_size']
+            score_line(ax, baselines[key], f"{key}: R/b={ratio:g}, R={baselines[key]['R']:,}", GROUP_COLORS[key], STYLES[j])
         axes_style(ax, title, xmax=1200)
-        ax.legend(fontsize=9, loc="lower right")
-    save(fig, "e001_fixed_batch.png", "E001 - Rollout comparisons at fixed mini-batch")
+        ax.legend(fontsize=8, loc="lower right")
+    save(fig, "e001_fixed_batch.png", "E001.2 - Rollout / batch ratio at fixed batch size")
 
     diagnostics = [("entropy", "Policy entropy"), ("value_loss", "Value loss"), ("policy_approx_kl", "PPO approximate KL"), ("clip_fraction", "Clip fraction"), ("raw_adv_std", "Raw advantage std"), ("critic_explained_variance", "Critic explained variance")]
     fig, axes = plt.subplots(2, 3, figsize=(14.2, 8.1))

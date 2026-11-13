@@ -6,8 +6,8 @@ The board is **12×12**, the initial snake length is **3**, and the maximum scor
 
 ## Main results
 
-- **Larger mini-batches achieve higher scores at fixed rollout size.** At 600M, increasing batch 256→1,024 at `R=8,192` raises the score **48.16→95.23**; increasing batch 1,024→10,240 at `R=81,920` raises it **77.06→95.87**.
-- **A larger rollout does not consistently improve scores at fixed batch size.** It helps batch 10,240 in these runs, but not batch 256 or 1,024.
+- **Larger batches achieve higher scores when rollout/batch stays at 8.** A/B/C use batches **256 / 1,024 / 10,240** and reach best scores of **67.94 / 102.48 / 110.65**. Rollout size and environment count grow proportionally with batch size.
+- **Increasing rollout/batch at a fixed batch size does not consistently improve scores.** It helps batch 10,240 when the ratio grows from 2 to 8, but not batch 256 or 1,024 in the tested comparisons.
 - **More PPO epochs can learn faster initially, but hurt later scores.** The early speedup is clearest at batch 10,240. Small batches suffer much more from repeated updates; eight epochs causes severe degradation at batch 256 and 1,024.
 - **Switching to a larger batch does not generally recover the score of starting with that batch.** A→B and A→C stay lower, while B-500M→C almost catches up. Early, middle and late switches produce different outcomes.
 - **Transformer models with richer features score much higher than the baseline MLP.** The small entity Transformer reaches **125.55**; increasing model size raises this to **132.94** and speeds up learning.
@@ -15,8 +15,8 @@ The board is **12×12**, the initial snake length is **3**, and the maximum scor
 
 | Experiment | Content | Model |
 | --- | --- | --- |
-| [E001.1](#e001-batch) | Mini-batch size, with rollout held fixed | Baseline MLP |
-| [E001.2](#e001-rollout) | Rollout size, with mini-batch held fixed | Baseline MLP |
+| [E001.1](#e001-batch) | Batch size, keeping rollout/batch = 8 | Baseline MLP |
+| [E001.2](#e001-rollout) | Rollout/batch ratio, keeping batch size fixed | Baseline MLP |
 | [E002](#e002) | PPO epochs | Baseline MLP |
 | [E003](#e003) | Switch the complete batch/rollout scale during training | Baseline MLP |
 | [E004](#e004) | Features, architecture, model size and teacher KL | CNN and Transformer variants |
@@ -88,21 +88,20 @@ flowchart TD
 <a id="e001"></a>
 <a id="e001-batch"></a>
 
-## E001.1 — Mini-batch size
+## E001.1 — Batch size at fixed rollout/batch
 
 ### Experiment contents
 
-Keep rollout size, number of environments and rollout horizon fixed, and change only the PPO mini-batch size. Compare **D vs B** at `R=8,192`, and **E vs C** at `R=81,920`.
+Compare **A, B and C** with mini-batch sizes **256, 1,024 and 10,240**, keeping **rollout/batch = 8**. Rollout size and the number of parallel environments increase proportionally; the per-environment rollout horizon stays at 64 steps.
 
 ### Key configuration
 
-All runs use the baseline MLP, original three-plane features, epoch 1 and learning rate 0.0003.
+All three runs use the baseline MLP, original three-plane features, epoch 1 and learning rate 0.0003. Each rollout supplies **8 mini-batch optimizer steps**. This is the project's batch-scaling experiment: the fixed quantity is `R/b`, rather than the absolute rollout size.
 
 | Run | Mini-batch b | Rollout R | Environments | R/b |
 | --- | --- | --- | --- | --- |
-| D | 256 | 8,192 | 128 | 32 |
+| A | 256 | 2,048 | 32 | 8 |
 | B | 1,024 | 8,192 | 128 | 8 |
-| E | 1,024 | 81,920 | 1,280 | 80 |
 | C | 10,240 | 81,920 | 1,280 | 8 |
 
 ### Model architecture
@@ -120,34 +119,37 @@ flowchart TD
 
 | Run | Eval @300M | Eval @600M | Best score | Last score | Last 4 evals | Training M |
 | --- | --- | --- | --- | --- | --- | --- |
-| D | 56.90 | 48.16 | 65.83 | 60.92 | 58.16 | 725 |
+| A | 58.03 | 66.26 | 67.94 | 57.39 | 61.69 | 850 |
 | B | 78.38 | 95.23 | 102.48 | 98.56 | 97.82 | 1175 |
-| E | 62.82 | 77.06 | 101.03 | 98.21 | 84.71 | 1125 |
 | C | 86.44 | 95.87 | 110.65 | 103.24 | 106.19 | 1200 |
 
-![Mini-batch experiment: rollout held fixed](docs/analysis/figures/e001_fixed_rollout.png)
+![Batch experiment: A/B/C with rollout/batch = 8](docs/analysis/figures/e001_batch_scale.png)
+
+![Batch experiment: training diagnostics at rollout/batch = 8](docs/analysis/figures/e001_diagnostics.png)
 
 ### Analysis
 
-1. **At R=8,192, batch 1,024 outperforms batch 256.** At 600M samples, B scores **95.23** versus D's **48.16**. Their best scores are **102.48 vs 65.83**.
-2. **At R=81,920, batch 10,240 outperforms batch 1,024.** At 600M, C scores **95.87** versus E's **77.06**. Their best scores are **110.65 vs 101.03**. E also learns more slowly through much of training.
-3. **The batch benefit appears at both fixed rollout sizes.** It cannot be explained solely by collecting a bigger rollout, because each pair collects the same number of transitions before updating. Smaller mini-batches perform more optimizer steps over that rollout, so changing batch also changes the update dynamics.
+1. **Batch 256 has a much lower score range.** At 600M samples, A scores **66.26**, compared with **95.23** for B and **95.87** for C.
+2. **The largest batch achieves the highest later scores.** B and C are close at 600M, but their best scores are **102.48 and 110.65**. The means of their last four evals are **97.82 and 106.19**, compared with **61.69** for A. These tail windows occur at different training endpoints, as the table shows.
+3. **Larger batches have lower value loss and slower entropy decay.** During 500–600M, A/B/C have average value losses of approximately **0.154 / 0.109 / 0.090**, entropy of **0.0186 / 0.0229 / 0.0345**, and raw advantage std of **0.398 / 0.332 / 0.300**.
+
+The comparison measures scaling batch and rollout together at a fixed ratio. It does not separate their individual contributions. At epoch 1, all runs still use each collected transition once, while larger batches reduce the number of optimizer steps per environment sample.
 
 ### Conclusion
 
-**Increasing the mini-batch size raises the achieved score in both fixed-rollout comparisons.** This is the clearest evidence for a batch-size benefit: the rollout and parallel environment count stay fixed within each comparison.
+**At rollout/batch = 8, increasing batch size raises the achieved score range, with batch 10,240 producing the highest observed scores.** The improvement from 1,024 to 10,240 is most visible later in training.
 
 <a id="e001-rollout"></a>
 
-## E001.2 — Rollout size
+## E001.2 — Rollout/batch ratio at fixed batch size
 
 ### Experiment contents
 
-Keep PPO mini-batch size fixed, and change the amount of experience collected before updating. Compare **A vs D** at batch 256, **B vs E** at batch 1,024, and **F vs C** at batch 10,240. Rollout size changes through the number of environments; the per-environment horizon remains 64.
+Keep PPO mini-batch size fixed and change **rollout/batch**: compare **A vs D** at batch 256 (**8 vs 32**), **B vs E** at batch 1,024 (**8 vs 80**), and **F vs C** at batch 10,240 (**2 vs 8**). Rollout size changes through the number of environments; the per-environment horizon remains 64.
 
 ### Key configuration
 
-All runs use the baseline MLP, original three-plane features, epoch 1 and learning rate 0.0003. `R = number of environments × 64`.
+All runs use the baseline MLP, original three-plane features, epoch 1 and learning rate 0.0003. `R = number of environments × 64`. At epoch 1, `R/b` is also the number of mini-batch optimizer steps per rollout; increasing it does not increase how often each transition is reused.
 
 | Run | Mini-batch b | Rollout R | Environments | R/b |
 | --- | --- | --- | --- | --- |
@@ -180,29 +182,19 @@ flowchart TD
 | F | 76.70 | 87.74 | 99.58 | 96.64 | 97.17 | 1200 |
 | C | 86.44 | 95.87 | 110.65 | 103.24 | 106.19 | 1200 |
 
-![Rollout experiment: mini-batch held fixed](docs/analysis/figures/e001_fixed_batch.png)
+![Rollout experiment: varying rollout/batch at fixed batch size](docs/analysis/figures/e001_fixed_batch.png)
 
 ### Analysis
 
-1. **At batch 256, a larger rollout does not improve the score.** Increasing R from 2,048 to 8,192 changes the best score from **67.94 to 65.83**. At 600M, the smaller rollout scores **66.26**, versus **48.16** for the larger rollout.
-2. **At batch 1,024, the larger rollout learns more slowly.** At 600M, R=8,192 scores **95.23**, versus **77.06** for R=81,920. Their best scores are similar, **102.48 vs 101.03**.
-3. **At batch 10,240, the larger rollout helps.** At the shared 1,200M endpoint, R=81,920 scores **103.24**, versus **96.64** for R=20,480. Their best scores are **110.65 vs 99.58**.
+1. **At batch 256, increasing R/b from 8 to 32 does not improve the score.** Increasing R from 2,048 to 8,192 changes the best score from **67.94 to 65.83**. At 600M, ratio 8 scores **66.26**, versus **48.16** for ratio 32.
+2. **At batch 1,024, increasing R/b from 8 to 80 slows learning.** At 600M, ratio 8 scores **95.23**, versus **77.06** for ratio 80. Their best scores are similar, **102.48 vs 101.03**.
+3. **At batch 10,240, increasing R/b from 2 to 8 helps.** At the shared 1,200M endpoint, ratio 8 scores **103.24**, versus **96.64** for ratio 2. Their best scores are **110.65 vs 99.58**.
 
 Rollout size determines how often a new policy collects fresh data. Here it also changes the number of parallel environments. Its effect depends on the mini-batch size rather than following a simple larger-is-better rule.
 
-#### Joint-scale reference: A/B/C
-
-The original A/B/C comparison increases **both** mini-batch and rollout size while keeping `R/b=8`. It remains useful as an overview of joint scaling, separate from the two single-variable experiments above.
-
-![Joint-scale reference: both batch and rollout change](docs/analysis/figures/e001_joint_scale.png)
-
-![E001: training diagnostics](docs/analysis/figures/e001_diagnostics.png)
-
-The larger joint scales have lower value loss and slower entropy decay. During 500–600M, A/B/C have average value losses of approximately **0.154 / 0.109 / 0.090**, entropy of **0.0186 / 0.0229 / 0.0345**, and raw advantage std of **0.398 / 0.332 / 0.300**. Because both variables change in A/B/C, these diagnostics describe joint scale rather than an isolated batch or rollout effect.
-
 ### Conclusion
 
-**Increasing rollout size alone does not consistently raise performance.** It helps at batch 10,240, but not at batch 256 or 1,024 in these runs. Combined with E001.1, the results show a clearer benefit from mini-batch growth than from rollout growth alone.
+**At a fixed batch size, a larger rollout/batch ratio is not always better.** Ratio 8 outperforms 32 at batch 256 and learns faster than 80 at batch 1,024, while increasing the ratio from 2 to 8 helps batch 10,240. Together with E001.1, this shows that simply increasing rollout at a fixed batch does not reproduce the gains from scaling batch and rollout proportionally.
 
 <a id="e002"></a>
 

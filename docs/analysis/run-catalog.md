@@ -34,7 +34,7 @@ Observed logged training time: **4.19 h**; optimizer steps: **1,147,464**. Job t
 
 ![E001 batch rollout scale exp-B: evaluation and training scores](figures/runs/1fl1l7hm.png)
 
-**Interpretation:** At fixed R=8,192, this larger mini-batch outperforms D over much of training. It also shows transient eval drops, so its best point should not stand in for the full trajectory.
+**Interpretation:** At rollout/batch=8, batch 1,024 substantially outperforms batch 256 (A), while batch 10,240 (C) achieves higher later scores. At the same batch 1,024, increasing the ratio to 80 (E) slows learning.
 
 ## E001 C — `pqn9f1sl`
 
@@ -50,7 +50,7 @@ Observed logged training time: **3.16 h**; optimizer steps: **117,192**. Job tim
 
 ![E001 batch rollout scale exp-C: evaluation and training scores](figures/runs/pqn9f1sl.png)
 
-**Interpretation:** The largest joint scale has the highest observed E001 peak and late-four mean. It reaches the sample cap, with some regression after its peak; no asymptotic ceiling is measured.
+**Interpretation:** At rollout/batch=8, batch 10,240 has the highest observed E001 peak and late-four mean. At this same batch size it also outperforms ratio 2 (F). It reaches the sample cap, with some regression after its peak; no asymptotic ceiling is measured.
 
 ## E001 D — `imrudw4e`
 
@@ -66,7 +66,7 @@ Observed logged training time: **2.88 h**; optimizer steps: **2,832,032**. Job t
 
 ![E001 batch rollout scale exp-D: evaluation and training scores](figures/runs/imrudw4e.png)
 
-**Interpretation:** At fixed R=8,192 this b=256 run is much weaker than B. Increasing rollout relative to A does not produce a higher observed peak.
+**Interpretation:** At batch 256, increasing rollout/batch from 8 (A) to 32 does not produce a higher observed peak and reduces the score at 600M.
 
 ## E001 E — `ywj4sihn`
 
@@ -82,7 +82,7 @@ Observed logged training time: **2.88 h**; optimizer steps: **1,098,640**. Job t
 
 ![E001 batch rollout scale exp-E: evaluation and training scores](figures/runs/ywj4sihn.png)
 
-**Interpretation:** At fixed R=81,920 it trails C through much of the curve. Its last single eval rebounds to 98.21, but the last-four mean is only 84.71, illustrating endpoint sensitivity.
+**Interpretation:** At batch 1,024, increasing rollout/batch from 8 (B) to 80 slows learning. Its last single eval rebounds to 98.21, but the last-four mean is only 84.71, illustrating endpoint sensitivity.
 
 ## E001 F — `9ag8xl46`
 

@@ -46,10 +46,10 @@ def run_interpretation(row):
     if row.study == "E001":
         notes = {
             "A":"The small-scale baseline stays well below B/C's late score range. It stops after 12 evals without a new high; this does not establish an infinite-sample ceiling.",
-            "B":"At fixed R=8,192, this larger mini-batch outperforms D over much of training. It also shows transient eval drops, so its best point should not stand in for the full trajectory.",
-            "C":"The largest joint scale has the highest observed E001 peak and late-four mean. It reaches the sample cap, with some regression after its peak; no asymptotic ceiling is measured.",
-            "D":"At fixed R=8,192 this b=256 run is much weaker than B. Increasing rollout relative to A does not produce a higher observed peak.",
-            "E":"At fixed R=81,920 it trails C through much of the curve. Its last single eval rebounds to 98.21, but the last-four mean is only 84.71, illustrating endpoint sensitivity.",
+            "B":"At rollout/batch=8, batch 1,024 substantially outperforms batch 256 (A), while batch 10,240 (C) achieves higher later scores. At the same batch 1,024, increasing the ratio to 80 (E) slows learning.",
+            "C":"At rollout/batch=8, batch 10,240 has the highest observed E001 peak and late-four mean. At this same batch size it also outperforms ratio 2 (F). It reaches the sample cap, with some regression after its peak; no asymptotic ceiling is measured.",
+            "D":"At batch 256, increasing rollout/batch from 8 (A) to 32 does not produce a higher observed peak and reduces the score at 600M.",
+            "E":"At batch 1,024, increasing rollout/batch from 8 (B) to 80 slows learning. Its last single eval rebounds to 98.21, but the last-four mean is only 84.71, illustrating endpoint sensitivity.",
             "F":"Compared with C at the same b=10,240 and 1,200M budget, the smaller rollout has lower last and last-four eval scores. This rollout benefit does not generalize to the b=256/1,024 comparisons.",
         }
         return notes[row.variant]
