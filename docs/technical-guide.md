@@ -1,6 +1,6 @@
 # Model and training reference
 
-This document describes the current implementation and runnable configs. Historical runs can use older versions: consult the [experiment results](../README.md) and each run's logged config.
+This document describes the current implementation and runnable configs. Supported model versions are `mlp_v1`, `cnn_v1`, `transformer_v1_small` and `transformer_v1_base`. Retired numeric Transformer versions are no longer accepted; use the matching historical branch to load those architectures. Current small/base feature layouts and checkpoint weights are unchanged.
 
 ### A: Original features with CNN
 

@@ -33,9 +33,8 @@ fn observation_batch_preserves_shuffled_rows_duplicates_and_partial_batch() {
 fn encode_into_overwrites_reused_buffers_and_parallel_env_rows_match_serial_encoding() {
     for version in [
         "mlp_v1",
-        "transformer_v2",
-        "transformer_v4",
-        "transformer_v5",
+        "cnn_v1",
+        "transformer_v1_small",
         "transformer_v1_base",
     ] {
         let mut value = serde_json::to_value(Config::load("config/smoke.yaml").unwrap()).unwrap();

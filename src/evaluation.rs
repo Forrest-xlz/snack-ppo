@@ -47,7 +47,7 @@ mod tests {
         let base: Config = serde_yaml::from_str(include_str!("../config/smoke.yaml")).unwrap();
         for encoding in [
             FeatureEncoding::HeadBodyFood,
-            FeatureEncoding::HeadBodyFoodGeometryOrder,
+            FeatureEncoding::EntityRegions,
         ] {
             let mut evaluation = base.evaluation.clone();
             evaluation.episodes = 23;

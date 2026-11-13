@@ -2,7 +2,7 @@
 
 ## Coverage and source
 
-The read-only export covers all **32 runs** returned by `xlz1014361885-tokyo/ppo-snake`, with **26,717 history rows**. Export completion: **2026-11-09T03:58:21.216403+00:00**. There are no failed metric exports. This is a time-bounded snapshot, not a live dashboard. Run configs/summary/history were retrieved together; interrupted runs are not completed by extrapolation.
+The read-only export covers all **32 runs** returned by `xlz1014361885-tokyo/ppo-snake`, with **26,717 history rows**. Export completion: **2026-11-09T03:58:21.216403+00:00**. There are no failed metric exports. The current README and catalog show 31 runs; the retired architecture run `tinpghgt` is retained only in the original data archive. This is a time-bounded snapshot, not a live dashboard. Run configs/summary/history were retrieved together; interrupted runs are not completed by extrapolation.
 
 The [inventory](data/inventory.json) retains run URLs, states, row counts, per-run export timestamps and history SHA-256 hashes. [run_configs.json](data/run_configs.json) contains the actual W&B configurations. Local full archives and summaries remain in `analysis/wandb/raw/<run_id>/`; they are Git-ignored, while the report's portable derived evidence is retained here. No model checkpoints were downloaded. Attempts to obtain `output.log` for the two crashed runs returned 404, so no crash cause is established.
 

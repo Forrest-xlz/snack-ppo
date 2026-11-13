@@ -3,7 +3,6 @@
 use crate::env::{Direction, Point, SnakeEnv};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-pub(crate) const CELL_BASE: usize = 60;
 pub(crate) const CELL_REGIONS: usize = 66;
 pub(crate) const SNAKE: usize = 21;
 pub(crate) const FOOD: usize = 24;
@@ -121,26 +120,17 @@ fn tables(w: usize, h: usize) -> Rc<FeatureTables> {
     })
 }
 
-pub(crate) fn encode(env: &SnakeEnv, with_cell_regions: bool) -> Vec<f32> {
-    let channels = if with_cell_regions {
-        CELL_REGIONS
-    } else {
-        CELL_BASE
-    };
-    let mut f = vec![0.0; channels * env.width() * env.height() + CONTEXT];
-    encode_into(env, with_cell_regions, &mut f);
+pub(crate) fn encode(env: &SnakeEnv) -> Vec<f32> {
+    let mut f = vec![0.0; CELL_REGIONS * env.width() * env.height() + CONTEXT];
+    encode_into(env, &mut f);
     f
 }
 
-pub(crate) fn encode_into(env: &SnakeEnv, with_cell_regions: bool, f: &mut [f32]) {
+pub(crate) fn encode_into(env: &SnakeEnv, f: &mut [f32]) {
     let w = env.width();
     let h = env.height();
     let area = w * h;
-    let channels = if with_cell_regions {
-        CELL_REGIONS
-    } else {
-        CELL_BASE
-    };
+    let channels = CELL_REGIONS;
     assert_eq!(f.len(), channels * area + CONTEXT);
     f.fill(0.0);
     let tables = tables(w, h);
@@ -209,11 +199,9 @@ pub(crate) fn encode_into(env: &SnakeEnv, with_cell_regions: bool, f: &mut [f32]
             {
                 f[(34 + j) * area + cell] = v;
             }
-            if with_cell_regions {
-                if let Some(region) = regions.at(cell) {
-                    for (j, &v) in region.features.iter().enumerate() {
-                        f[(60 + j) * area + cell] = v;
-                    }
+            if let Some(region) = regions.at(cell) {
+                for (j, &v) in region.features.iter().enumerate() {
+                    f[(60 + j) * area + cell] = v;
                 }
             }
         }

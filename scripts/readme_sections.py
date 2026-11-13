@@ -20,19 +20,6 @@ flowchart TD
     H --> V["Critic: Linear 256 to 1"]
 ```'''
 
-GRID_DIAGRAM = '''```mermaid
-flowchart TD
-    X["Grid features: N x 144 x 7"] --> E["Linear 7 to 32 + learned cell positions"]
-    E --> T["Append learned critic token: N x 145 x 32"]
-    T --> E1["Encoder 1: 145 queries, 2 heads, FFN 32 to 64 to 32"]
-    E1 --> E2["Encoder 2: head-cell / critic queries; all 145 keys and values"]
-    E2 --> N["Final LayerNorm: N x 2 x 32"]
-    N --> H["Shared Linear 32 to 256 + ReLU, applied to each readout"]
-    H --> P["Head-cell row: Linear 256 to 4 + softmax"]
-    H --> V["Critic-token row: Linear 256 to 1"]
-```'''
-
-
 def entity_diagram(dim, hidden, layers):
     middle = (f'    T --> E1["Encoder 1: all 147 tokens, 2 heads, FFN {dim} to {2*dim} to {dim}"]\n'
               if layers == 2 else
@@ -129,25 +116,28 @@ def blocks(results, lookup, configs, at, number, millions, table):
     model_config=[];architecture_results=[]
     specs={
         "A":("CNN","3 planes","—","3 convolutions","—","172,581"),
-        "B":("Grid Transformer v3","7 / Cell","7 → 32","2","32","31,781"),
         "B-v7":("Entity Transformer small","66 / 21 / 24 / 8","input → 32 → 16","2","16","18,533"),
         "C":("Entity Transformer base","66 / 21 / 24 / 8","input → 64 → 32","3","32","56,357"),
         "D":("Small + teacher KL","66 / 21 / 24 / 8","input → 32 → 16","2","16","18,533 per model"),
     }
-    for key in ["A","B","B-v7","C","D"]:
+    for key in ["A","B-v7","C","D"]:
         r=lookup[("E004",key)]
-        model_config.append([key,*specs[key],"0.001" if key=="D" else "0"])
-        architecture_results.append([key,number(r.eval_at_300M),number(r.best_eval),number(r.last_eval),number(r.last4_eval_mean),f"{millions(r.last_logged_samples)} / {millions(r.last_eval_samples)}"])
+        model_config.append(["B" if key=="B-v7" else key,*specs[key],"0.001" if key=="D" else "0"])
+        architecture_results.append(["B" if key=="B-v7" else key,number(r.eval_at_300M),number(r.best_eval),number(r.last_eval),number(r.last4_eval_mean),f"{millions(r.last_logged_samples)} / {millions(r.last_eval_samples)}"])
     original=[(0,"Snake head","1 at the head cell, 0 elsewhere"),(1,"Snake body","1 on all body cells including the tail, excluding the head"),(2,"Food","1 at the food cell, 0 elsewhere")]
-    grid=original+[(3,"Absolute x","x / 11"),(4,"Absolute y","y / 11"),(5,"Empty cell","1 if no head, body or food occupies the cell"),(6,"Distance along the body from the tail","Tail index=0; increasing toward the head; divide by 143; non-snake cells=0")]
+    def scale_config(keys):
+        return table(["Run","Mini-batch b","Rollout R","Environments","R/b"],[[k,f"{base[k].batch_size:,}",f"{base[k].rollout_samples:,}",f"{base[k].num_envs:,}",f"{base[k].rollout_samples/base[k].batch_size:g}"] for k in keys])
+    def scale_results(keys):
+        return table(["Run","Eval @300M","Eval @600M","Best score","Last score","Last 4 evals","Training M"],[[k,number(base[k].eval_at_300M),number(base[k].eval_at_600M),number(base[k].best_eval),number(base[k].last_eval),number(base[k].last4_eval_mean),millions(base[k].last_logged_samples)] for k in keys])
     return {
-        "MLP_DIAGRAM":MLP_DIAGRAM,"CNN_DIAGRAM":CNN_DIAGRAM,"GRID_DIAGRAM":GRID_DIAGRAM,
+        "MLP_DIAGRAM":MLP_DIAGRAM,"CNN_DIAGRAM":CNN_DIAGRAM,
         "SMALL_DIAGRAM":entity_diagram(16,32,2),"BASE_DIAGRAM":entity_diagram(32,64,3),"TEACHER_DIAGRAM":TEACHER_DIAGRAM,
         "ORIGINAL_FEATURES":table(["Channel","Feature","Encoding"],original),
-        "GRID_FEATURES":table(["Channel","Feature","Encoding"],grid),
         **{key:table(["Index","Feature","Encoding"],value) for key,value in zip(["CELL_FEATURES","SNAKE_FEATURES","FOOD_FEATURES","GLOBAL_FEATURES"],features)},
-        "E001_CONFIG":table(["Run","Mini-batch b","Rollout R","Environments","R/b"],[[k,f"{base[k].batch_size:,}",f"{base[k].rollout_samples:,}",f"{base[k].num_envs:,}",f"{base[k].rollout_samples/base[k].batch_size:g}"] for k in "ABCDEF"]),
-        "E001_RESULTS":table(["Run","Eval @300M","Eval @600M","Best score","Last score","Last 4 evals","Training M"],[[k,number(base[k].eval_at_300M),number(base[k].eval_at_600M),number(base[k].best_eval),number(base[k].last_eval),number(base[k].last4_eval_mean),millions(base[k].last_logged_samples)] for k in "ABCDEF"]),
+        "E001_BATCH_CONFIG":scale_config("DBEC"),
+        "E001_BATCH_RESULTS":scale_results("DBEC"),
+        "E001_ROLLOUT_CONFIG":scale_config("ADBEFC"),
+        "E001_ROLLOUT_RESULTS":scale_results("ADBEFC"),
         "E002_EARLY":table(["Scale","Epochs","Score @25M","Score @50M","Score @100M"],early),
         "E002_RESULTS":table(["Scale","Epochs","Score @300M","Best score","Last score","Last 4 evals","Training M"],late),
         "E003_RESULTS":table(["Schedule","Score at switch","After +300M","Best score","Last score","Total / additional M"],switches),

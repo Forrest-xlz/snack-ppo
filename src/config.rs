@@ -96,31 +96,16 @@ pub enum ModelVersion {
     MlpV1,
     #[serde(rename = "cnn_v1")]
     CnnV1,
-    #[serde(rename = "transformer_v1")]
-    TransformerV1,
-    #[serde(rename = "transformer_v2")]
-    TransformerV2,
-    #[serde(rename = "transformer_v3")]
-    TransformerV3,
-    #[serde(rename = "transformer_v4")]
-    TransformerV4,
-    #[serde(rename = "transformer_v5")]
-    TransformerV5,
     #[serde(rename = "transformer_v1_base")]
     TransformerV1Base,
     #[serde(rename = "transformer_v1_small")]
     TransformerV1Small,
-    #[serde(rename = "transformer_v8")]
-    TransformerV8,
 }
 
 impl ModelVersion {
     pub fn feature_encoding(self) -> FeatureEncoding {
         match self {
-            Self::MlpV1 | Self::CnnV1 | Self::TransformerV1 => FeatureEncoding::HeadBodyFood,
-            Self::TransformerV2 | Self::TransformerV3 => FeatureEncoding::HeadBodyFoodGeometryOrder,
-            Self::TransformerV4 => FeatureEncoding::GridRich31,
-            Self::TransformerV5 | Self::TransformerV8 => FeatureEncoding::EntityBase,
+            Self::MlpV1 | Self::CnnV1 => FeatureEncoding::HeadBodyFood,
             Self::TransformerV1Base | Self::TransformerV1Small => FeatureEncoding::EntityRegions,
         }
     }

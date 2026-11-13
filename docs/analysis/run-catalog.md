@@ -2,7 +2,7 @@
 
 Snapshot downloaded 2026-11-09. Each section identifies the actual logged config, shows both evaluation and training scores, and states the supported interpretation. All runs use seed 42. Raw eval means are the primary performance measure; training scores are stochastic rolling-game metrics. The common protocol, single-seed limitations and diagnostic definitions are in the [main report](../../README.md) and [methods](methods.md).
 
-The 32 histories are all included. C/D's `crashed` status is retained; no failure cause is invented. Best evals are retrospective diagnostics. Last-four means describe each run's own tail, not a common training budget.
+The current catalog covers 31 runs. One retired architecture run remains in the 32-run data archive but is omitted from this report. C/D's `crashed` status is retained; no failure cause is invented. Best evals are retrospective diagnostics. Last-four means describe each run's own tail, not a common training budget.
 
 ## E001 A — `8qn5aaor`
 
@@ -476,23 +476,7 @@ Observed logged training time: **5.55 h**; optimizer steps: **117,192**. Job tim
 
 **Interpretation:** This CNN does not improve on the MLP at the matched 1,200M endpoint. The result concerns this architecture and fixed training protocol, not all convolutional policies.
 
-## E004 B — `tinpghgt`
-
-[Open W&B run](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/tinpghgt) · actual version **`transformer_v3`** · **ended before configured cap**.
-
-**Experiment:** b=10,240, R=81,920, 1,280 environments × 64 steps, 1 PPO epoch(s), LR=0.0003, device `cuda`, hidden readout 256.
-
-Observed logged training time: **2.27 h**; optimizer steps: **30,376**. Job times are not matched hardware benchmarks.
-
-| Last training M | Last eval (at M) | Best eval (at M) | Last-four mean | Eval count |
-| --- | --- | --- | --- | --- |
-| 311 | 30.98 (300) | 33.80 (175) | 20.75 | 12 |
-
-![E004 feature architecture exp-B: evaluation and training scores](figures/runs/tinpghgt.png)
-
-**Interpretation:** This is the historical transformer_v3 seven-feature grid experiment, not today's small B. Its score remains low and volatile. It ends before its configured cap without a recorded early-stop trigger, so it should not be called converged.
-
-## E004 B-v7 — `7w4f2mfc`
+## E004 B — `7w4f2mfc`
 
 [Open W&B run](https://wandb.ai/xlz1014361885-tokyo/ppo-snake/runs/7w4f2mfc) · actual version **`transformer_v7`** · **eval early stop**.
 

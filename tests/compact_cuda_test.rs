@@ -15,7 +15,7 @@ fn compact_entities_complete_cuda_ppo_with_two_actual_attention_layers() {
             return;
         }
     };
-    for version in ["transformer_v1_small", "transformer_v8"] {
+    for version in ["transformer_v1_small"] {
         compact::exercise(version, device);
     }
     tch::Cuda::synchronize(0);

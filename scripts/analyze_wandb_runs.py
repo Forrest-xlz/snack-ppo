@@ -298,12 +298,12 @@ def main():
              "Post-switch clock excludes prefix cost; scratch reference is a learning-speed reference, not equal total compute." if additional else "Total samples include pretraining. Adam resets at each switch; same-scale reset controls were not run.")
 
     e004 = {r["variant"]:r for r in runs if r["study"] == "E004"}
-    architecture_labels = {"A":"A CNN / 3 planes", "B":"Historical B / transformer_v3", "B-v7":"Small / historical B-v7", "C":"C base (partial)", "D":"D small + teacher KL (partial)"}
+    architecture_labels = {"A":"A CNN / 3 planes", "B-v7":"B small", "C":"C base (partial)", "D":"D small + teacher KL (partial)"}
     fig, ax = plt.subplots(figsize=(11.6, 5.8))
     score_line(ax, baselines["C"], "E001 C MLP / 3 planes", "#626B77", "--")
-    for j, key in enumerate(["A", "B", "B-v7", "C", "D"]):
+    for j, key in enumerate(["A", "B-v7", "C", "D"]):
         score_line(ax, e004[key], architecture_labels[key], COLORS[j], STYLES[j])
-    axes_style(ax, "Actual logged model versions; do not identify runs by letter alone", xmax=1200)
+    axes_style(ax, "CNN, entity Transformer small/base and teacher KL", xmax=1200)
     ax.legend(fontsize=8.5, loc="lower right", ncol=2)
     save(fig, "e004_architectures.png", "E004 - Feature and model architecture experiments")
 

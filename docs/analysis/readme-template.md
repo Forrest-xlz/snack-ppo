@@ -6,7 +6,8 @@ The board is **12×12**, the initial snake length is **3**, and the maximum scor
 
 ## Main results
 
-- **Larger mini-batches achieve higher scores.** With `R/b=8`, the baseline MLP's best scores rise from **67.94 → 102.48 → 110.65** as batch size grows from **256 → 1,024 → 10,240**. Increasing rollout size alone does not give the same consistent improvement.
+- **Larger mini-batches achieve higher scores at fixed rollout size.** At 600M, increasing batch 256→1,024 at `R=8,192` raises the score **48.16→95.23**; increasing batch 1,024→10,240 at `R=81,920` raises it **77.06→95.87**.
+- **A larger rollout does not consistently improve scores at fixed batch size.** It helps batch 10,240 in these runs, but not batch 256 or 1,024.
 - **More PPO epochs can learn faster initially, but hurt later scores.** The early speedup is clearest at batch 10,240. Small batches suffer much more from repeated updates; eight epochs causes severe degradation at batch 256 and 1,024.
 - **Switching to a larger batch does not generally recover the score of starting with that batch.** A→B and A→C stay lower, while B-500M→C almost catches up. Early, middle and late switches produce different outcomes.
 - **Transformer models with richer features score much higher than the baseline MLP.** The small entity Transformer reaches **125.55**; increasing model size raises this to **132.94** and speeds up learning.
@@ -14,19 +15,20 @@ The board is **12×12**, the initial snake length is **3**, and the maximum scor
 
 | Experiment | Content | Model |
 | --- | --- | --- |
-| [E001](#e001) | Mini-batch and rollout size | Baseline MLP |
+| [E001.1](#e001-batch) | Mini-batch size, with rollout held fixed | Baseline MLP |
+| [E001.2](#e001-rollout) | Rollout size, with mini-batch held fixed | Baseline MLP |
 | [E002](#e002) | PPO epochs | Baseline MLP |
 | [E003](#e003) | Switch the complete batch/rollout scale during training | Baseline MLP |
 | [E004](#e004) | Features, architecture, model size and teacher KL | CNN and Transformer variants |
 
 ## Shared configuration
 
-**E001, E002 and E003 all use the same baseline MLP and the same three input planes.** E004 fixes the large batch/rollout configuration and changes the features, architecture, model size or teacher loss.
+**Both E001 experiments, E002 and E003 use the same baseline MLP and the same three input planes.** E004 fixes the large batch/rollout configuration and changes the features, architecture, model size or teacher loss. E001.1 and E001.2 reuse the original six E001 runs; the A–F run labels are unchanged.
 
-| Parameter | E001: batch / rollout | E002: epochs | E003: switching | E004: features / architecture |
+| Parameter | E001.1 / E001.2 | E002: epochs | E003: switching | E004: features / architecture |
 | --- | --- | --- | --- | --- |
-| Model | MLP 432→256→256 | Same MLP | Same MLP | CNN / grid Transformer / entity Transformer |
-| Input features | Head, body, food | Same 3 planes | Same 3 planes | 3 planes, 7 Cell features, or 66/21/24/8 entity features |
+| Model | MLP 432→256→256 | Same MLP | Same MLP | CNN / Transformer variants |
+| Input features | Head, body, food | Same 3 planes | Same 3 planes | 3 planes or 66/21/24/8 entity features |
 | Mini-batch `b` | 256 / 1,024 / 10,240 | A/B/C: 256 / 1,024 / 10,240 | Switch between A/B/C | **10,240** |
 | Rollout `R` | 2,048 / 8,192 / 20,480 / 81,920 | A/B/C: 2,048 / 8,192 / 81,920 | Switch together with `b`, keeping `R/b=8` | **81,920** |
 | Parallel environments | 32 / 128 / 320 / 1,280 | 32 / 128 / 1,280 | Switch together with `b` | **1,280** |
@@ -58,7 +60,7 @@ The board is **12×12**, the initial snake length is **3**, and the maximum scor
 
 ## Baseline model and input features
 
-The first three experiment groups use **`mlp_v1`**, with **177,925 parameters**. Its two shared hidden layers feed an actor with four absolute actions—up, down, left and right—and a scalar value head.
+The batch, rollout, epoch and switching experiments use **`mlp_v1`**, with **177,925 parameters**. Its two shared hidden layers feed an actor with four absolute actions—up, down, left and right—and a scalar value head.
 
 ### Baseline features
 
@@ -73,18 +75,19 @@ Each feature is a 12×12 binary plane. The three planes are flattened into **432
 `N` is the number of states processed together. It is 1 for a single game and larger during parallel sampling, mini-batch training and batched evaluation.
 
 <a id="e001"></a>
+<a id="e001-batch"></a>
 
-## E001 — Mini-batch and rollout size
+## E001.1 — Mini-batch size
 
 ### Experiment contents
 
-Increase mini-batch size and rollout size together in A/B/C, then add D/E/F to compare the two variables separately. `R = number of environments × 64`.
+Keep rollout size, number of environments and rollout horizon fixed, and change only the PPO mini-batch size. Compare **D vs B** at `R=8,192`, and **E vs C** at `R=81,920`.
 
 ### Key configuration
 
 All runs use the baseline MLP, original three-plane features, epoch 1 and learning rate 0.0003.
 
-{{E001_CONFIG}}
+{{E001_BATCH_CONFIG}}
 
 ### Model architecture
 
@@ -92,27 +95,65 @@ All runs use the baseline MLP, original three-plane features, epoch 1 and learni
 
 ### Results
 
-{{E001_RESULTS}}
+{{E001_BATCH_RESULTS}}
 
-![E001: joint batch and rollout scaling](docs/analysis/figures/e001_joint_scale.png)
-
-![E001: fixed rollout](docs/analysis/figures/e001_fixed_rollout.png)
-
-![E001: fixed mini-batch](docs/analysis/figures/e001_fixed_batch.png)
+![Mini-batch experiment: rollout held fixed](docs/analysis/figures/e001_fixed_rollout.png)
 
 ### Analysis
 
-1. **Increasing batch size raises the score range.** A/B/C reach best scores of **67.94 / 102.48 / 110.65**. At 300M samples they score **58.03 / 78.38 / 86.44**. Additional samples do not bring A close to B/C within these runs.
-2. **The fixed-rollout comparisons show the same batch effect.** At 600M and `R=8,192`, batch 1,024 scores **95.23**, versus **48.16** for batch 256. At `R=81,920`, batch 10,240 scores **95.87**, versus **77.06** for batch 1,024.
-3. **Increasing rollout alone is less effective.** With batch 256, increasing R from 2,048 to 8,192 does not improve the best score. With batch 1,024, R=81,920 learns more slowly than R=8,192. With batch 10,240, the larger rollout does help: C finishes at **103.24**, versus F at **96.64**.
-
-![E001: training diagnostics](docs/analysis/figures/e001_diagnostics.png)
-
-The larger batches also have lower value loss and slower entropy decay. During 500–600M, A/B/C have average value losses of approximately **0.154 / 0.109 / 0.090**, entropy of **0.0186 / 0.0229 / 0.0345**, and raw advantage std of **0.398 / 0.332 / 0.300**.
+1. **At R=8,192, batch 1,024 outperforms batch 256.** At 600M samples, B scores **95.23** versus D's **48.16**. Their best scores are **102.48 vs 65.83**.
+2. **At R=81,920, batch 10,240 outperforms batch 1,024.** At 600M, C scores **95.87** versus E's **77.06**. Their best scores are **110.65 vs 101.03**. E also learns more slowly through much of training.
+3. **The batch benefit appears at both fixed rollout sizes.** It cannot be explained solely by collecting a bigger rollout, because each pair collects the same number of transitions before updating. Smaller mini-batches perform more optimizer steps over that rollout, so changing batch also changes the update dynamics.
 
 ### Conclusion
 
-**Batch size has a stronger effect on the achieved score than rollout size alone.** Batch 10,240 with R=81,920 is the strongest baseline MLP configuration in this group. Larger batches retain more policy entropy and have lower value loss, while simply collecting a larger rollout does not consistently raise performance.
+**Increasing the mini-batch size raises the achieved score in both fixed-rollout comparisons.** This is the clearest evidence for a batch-size benefit: the rollout and parallel environment count stay fixed within each comparison.
+
+<a id="e001-rollout"></a>
+
+## E001.2 — Rollout size
+
+### Experiment contents
+
+Keep PPO mini-batch size fixed, and change the amount of experience collected before updating. Compare **A vs D** at batch 256, **B vs E** at batch 1,024, and **F vs C** at batch 10,240. Rollout size changes through the number of environments; the per-environment horizon remains 64.
+
+### Key configuration
+
+All runs use the baseline MLP, original three-plane features, epoch 1 and learning rate 0.0003. `R = number of environments × 64`.
+
+{{E001_ROLLOUT_CONFIG}}
+
+### Model architecture
+
+{{MLP_DIAGRAM}}
+
+### Results
+
+{{E001_ROLLOUT_RESULTS}}
+
+![Rollout experiment: mini-batch held fixed](docs/analysis/figures/e001_fixed_batch.png)
+
+### Analysis
+
+1. **At batch 256, a larger rollout does not improve the score.** Increasing R from 2,048 to 8,192 changes the best score from **67.94 to 65.83**. At 600M, the smaller rollout scores **66.26**, versus **48.16** for the larger rollout.
+2. **At batch 1,024, the larger rollout learns more slowly.** At 600M, R=8,192 scores **95.23**, versus **77.06** for R=81,920. Their best scores are similar, **102.48 vs 101.03**.
+3. **At batch 10,240, the larger rollout helps.** At the shared 1,200M endpoint, R=81,920 scores **103.24**, versus **96.64** for R=20,480. Their best scores are **110.65 vs 99.58**.
+
+Rollout size determines how often a new policy collects fresh data. Here it also changes the number of parallel environments. Its effect depends on the mini-batch size rather than following a simple larger-is-better rule.
+
+#### Joint-scale reference: A/B/C
+
+The original A/B/C comparison increases **both** mini-batch and rollout size while keeping `R/b=8`. It remains useful as an overview of joint scaling, separate from the two single-variable experiments above.
+
+![Joint-scale reference: both batch and rollout change](docs/analysis/figures/e001_joint_scale.png)
+
+![E001: training diagnostics](docs/analysis/figures/e001_diagnostics.png)
+
+The larger joint scales have lower value loss and slower entropy decay. During 500–600M, A/B/C have average value losses of approximately **0.154 / 0.109 / 0.090**, entropy of **0.0186 / 0.0229 / 0.0345**, and raw advantage std of **0.398 / 0.332 / 0.300**. Because both variables change in A/B/C, these diagnostics describe joint scale rather than an isolated batch or rollout effect.
+
+### Conclusion
+
+**Increasing rollout size alone does not consistently raise performance.** It helps at batch 10,240, but not at batch 256 or 1,024 in these runs. Combined with E001.1, the results show a clearer benefit from mini-batch growth than from rollout growth alone.
 
 <a id="e002"></a>
 
@@ -220,15 +261,13 @@ Switching earlier is therefore not always better. For A→C, the 550M switch sta
 
 ### Experiment contents
 
-Keep the strongest E001 training scale fixed and change the representation and network. Compare the original-feature CNN, an early seven-feature grid Transformer, a richer entity Transformer, a larger entity Transformer, and the small entity Transformer with a best-eval teacher KL loss.
+Keep the strongest E001 training scale fixed and change the representation and network. Compare the original-feature CNN, the small entity Transformer, the larger entity Transformer, and the small entity Transformer with a best-eval teacher KL loss.
 
 ### Key configuration
 
 All E004 runs use **batch 10,240**, **rollout 81,920**, **1,280 environments**, **64 rollout steps**, **epoch 1**, **learning rate 0.0003**, **entropy coefficient 0.001**, and a **256-unit output projection**. Only D adds teacher KL with coefficient 0.001.
 
 {{E004_CONFIG}}
-
-The historical **B** run is `transformer_v3`. **B-v7** is the small entity model, now named `transformer_v1_small`. The active B configuration selects this small model; it is different from the earlier B experiment.
 
 ### Model architectures
 
@@ -238,17 +277,7 @@ Input features are the same head/body/food planes used by the baseline MLP. All 
 
 {{CNN_DIAGRAM}}
 
-#### Historical B — Seven-feature grid Transformer
-
-Each board cell becomes a token. The actor reads the head-cell token; the critic reads an additional learned token. Token dimension is 32, with 2 encoder layers and 2 attention heads.
-
-{{GRID_DIAGRAM}}
-
-The seven raw features per cell are:
-
-{{GRID_FEATURES}}
-
-#### B-v7 / current small — Entity Transformer
+#### B — Small entity Transformer
 
 The board contributes **144 Cell tokens**, followed by **1 Snake, 1 Food and 1 Global token**, for **147 tokens**. Four independent input MLPs embed the token types. The actor reads Snake and the critic reads Global.
 
@@ -321,7 +350,7 @@ At matching sample counts:
 
 ### Analysis
 
-**Replacing the MLP with the tested CNN does not help.** With the original three input planes, CNN A reaches **75.23** and ends at **74.42**, below the MLP's best **110.65**. The early seven-feature grid Transformer is also weak, peaking at **33.80**.
+**Replacing the MLP with the tested CNN does not help.** With the original three input planes, CNN A reaches **75.23** and ends at **74.42**, below the MLP's best **110.65**.
 
 **The richer entity representation and Transformer work much better.** Small reaches **125.55 at 275M**, exceeding the MLP's best score with far fewer samples. Its body-order, geometry, chain-link and connected-region features give the model explicit information about more than occupied cells.
 

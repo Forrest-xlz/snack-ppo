@@ -10,7 +10,7 @@ use tch::{nn, Cuda, Device, Kind, Tensor};
 fn configured(source: &std::path::Path) -> Config {
     let base: Config = serde_yaml::from_str(include_str!("../config/smoke.yaml")).unwrap();
     let mut value = serde_json::to_value(base).unwrap();
-    value["model"]["version"] = json!("transformer_v2");
+    value["model"]["version"] = json!("mlp_v1");
     value["kickstarting"] = json!({
         "teacher_checkpoint": source,
         "teacher_model": {"version": "mlp_v1", "hidden_size": 16},
@@ -85,7 +85,7 @@ fn student_cli_uses_teacher_then_turns_auxiliary_loss_off() {
                 .join("students/kickstarting-smoke/latest.ot"),
         )
         .unwrap();
-    let observations = Tensor::zeros([1, 175], (Kind::Float, Device::Cpu));
+    let observations = Tensor::zeros([1, 75], (Kind::Float, Device::Cpu));
     let (_, values) = tch::no_grad(|| student.forward(&observations));
     assert_eq!(values.isfinite().all().int64_value(&[]), 1);
 }
@@ -230,14 +230,16 @@ fn cuda_student_has_finite_outputs_gradients_and_reports_its_actual_backend() {
         return;
     }
     let directory = tempfile::tempdir().unwrap();
-    let config = configured(&directory.path().join("unused.ot"));
+    let mut config = configured(&directory.path().join("unused.ot"));
+    config.model.version = ppo_snake::config::ModelVersion::TransformerV1Small;
+    config.kickstarting = None;
     let store = nn::VarStore::new(Device::Cuda(0));
     let model = ActorCritic::from_config(&store.root(), &config);
     let backend = model
         .attention_backend(Device::Cuda(0), 2, 25, true)
         .unwrap();
     assert!(backend.contains("BFloat16"), "{backend}");
-    let observations = Tensor::rand([2, 175], (Kind::Float, Device::Cuda(0)));
+    let observations = Tensor::rand([2, 1703], (Kind::Float, Device::Cuda(0)));
     let output = model.evaluate_actions(
         &observations,
         &Tensor::zeros([2], (Kind::Int64, Device::Cuda(0))),

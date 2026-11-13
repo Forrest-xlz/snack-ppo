@@ -2,11 +2,9 @@ use tch::{nn, nn::Module, Kind, Tensor};
 
 use crate::config::{Config, ModelVersion};
 use crate::entity_transformer::EntityTransformer;
-use crate::transformer::TransformerEncoder;
 
 enum Backbone {
     Dense(nn::Sequential),
-    Transformer(Box<TransformerEncoder>),
     EntityTransformer(Box<EntityTransformer>),
 }
 
@@ -34,13 +32,10 @@ impl ActorCritic {
         &self,
         device: tch::Device,
         batch: i64,
-        cells: i64,
+        _cells: i64,
         training: bool,
     ) -> Option<String> {
         match &self.shared {
-            Backbone::Transformer(encoder) => {
-                Some(encoder.attention_backend(device, batch, cells, training))
-            }
             Backbone::Dense(_) => None,
             Backbone::EntityTransformer(encoder) => {
                 Some(encoder.attention_backend(device, batch, training))
@@ -53,19 +48,13 @@ impl ActorCritic {
         let height = config.environment.height as i64;
         let width = config.environment.width as i64;
         match config.model.version {
-            ModelVersion::TransformerV5
-            | ModelVersion::TransformerV1Base
-            | ModelVersion::TransformerV1Small
-            | ModelVersion::TransformerV8 => Self {
+            ModelVersion::TransformerV1Base | ModelVersion::TransformerV1Small => Self {
                 shared: Backbone::EntityTransformer(Box::new(EntityTransformer::new(
                     path,
                     height * width,
                     channels,
                     config.model.hidden_size,
-                    matches!(
-                        config.model.version,
-                        ModelVersion::TransformerV1Small | ModelVersion::TransformerV8
-                    ),
+                    config.model.version == ModelVersion::TransformerV1Small,
                 ))),
                 policy_head: nn::linear(
                     path / "policy",
@@ -86,35 +75,6 @@ impl ActorCritic {
             ModelVersion::CnnV1 => {
                 Self::cnn(path, channels, height, width, config.model.hidden_size)
             }
-            ModelVersion::TransformerV1
-            | ModelVersion::TransformerV2
-            | ModelVersion::TransformerV3
-            | ModelVersion::TransformerV4 => Self {
-                shared: Backbone::Transformer(Box::new(TransformerEncoder::new(
-                    path,
-                    height * width,
-                    channels,
-                    config.model.hidden_size,
-                    match config.model.version {
-                        ModelVersion::TransformerV4 => 3,
-                        ModelVersion::TransformerV3 => 2,
-                        _ => 1,
-                    },
-                    config.model.version == ModelVersion::TransformerV4,
-                ))),
-                policy_head: nn::linear(
-                    path / "policy",
-                    config.model.hidden_size,
-                    4,
-                    Default::default(),
-                ),
-                value_head: nn::linear(
-                    path / "value",
-                    config.model.hidden_size,
-                    1,
-                    Default::default(),
-                ),
-            },
         }
     }
 
@@ -183,7 +143,6 @@ impl ActorCritic {
                 let features = shared.forward(observations);
                 (features.shallow_clone(), features)
             }
-            Backbone::Transformer(encoder) => encoder.forward(observations),
             Backbone::EntityTransformer(encoder) => encoder.forward(observations),
         };
         let logits = actor_features.apply(&self.policy_head);

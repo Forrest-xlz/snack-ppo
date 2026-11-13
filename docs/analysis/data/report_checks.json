@@ -7,7 +7,6 @@
   ],
   "missing_links": [],
   "image_count": 44,
-  "run_count": 32,
   "independent_numeric_checks": 160,
   "continuous_history_rows": 26717,
   "feature_dimensions": {
@@ -28,9 +27,29 @@
   "parameter_counts": {
     "MLP": 177925,
     "CNN": 172581,
-    "Grid v3": 31781,
     "Entity small": 18533,
     "Entity base": 56357
   },
-  "visual_review": "Existing comparison figures retained. New early-epoch chart inspected at full size; all 44 PNGs decoded. Architecture diagrams checked against model.rs, transformer.rs and entity_transformer.rs."
+  "visual_review": "Updated E004 comparison inspected; obsolete architecture omitted. All 44 archived PNGs decode. Nine active architecture diagrams checked against current code.",
+  "archive_run_count": 32,
+  "report_run_count": 31,
+  "cleanup_verification": {
+    "rust_tests": 104,
+    "cuda_required": true,
+    "pre_cleanup_checkpoints": [
+      "mlp_v1",
+      "cnn_v1",
+      "transformer_v1_small",
+      "transformer_v1_base"
+    ],
+    "checkpoint_outputs_and_features": "exact match",
+    "dense_feature_fixture_lengths": [
+      3,
+      73,
+      113
+    ],
+    "dense_feature_values_per_state": 9557,
+    "release_build": "passed",
+    "read_only_review": "no actionable issues"
+  }
 }

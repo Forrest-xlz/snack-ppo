@@ -81,17 +81,19 @@ def run_interpretation(row):
         return text
     return {
         "A":"This CNN does not improve on the MLP at the matched 1,200M endpoint. The result concerns this architecture and fixed training protocol, not all convolutional policies.",
-        "B":"This is the historical transformer_v3 seven-feature grid experiment, not today's small B. Its score remains low and volatile. It ends before its configured cap without a recorded early-stop trigger, so it should not be called converged.",
         "B-v7":"The entity small model exceeds the MLP's observed best score, then regresses by 53.93 points from its peak to the last eval. Its entropy is not monotonically vanishing during that late regression. The current name for this architecture is transformer_v1_small.",
         "C":"The base entity model exceeds the MLP's range early and has the highest observed mean in the export. W&B marks the run crashed at 419M, with last eval at 400M. After that eval the training rolling score falls to 18.49 at 409M and recovers to 129.32 by 419M; no later eval assesses that event. Interruption cause and later stability are unknown.",
         "D":"At the common 575M point it scores 120.82 versus 71.62 without the teacher, then continues to high scores. It still has large downward excursions, and the first pre-KL evaluation differs between runs. The evidence supports a promising direction, not clean attribution or a completed-run stability claim.",
     }[row.variant]
 
 
-catalog = ["# Per-run experiment catalog", "", "Snapshot downloaded 2026-11-09. Each section identifies the actual logged config, shows both evaluation and training scores, and states the supported interpretation. All runs use seed 42. Raw eval means are the primary performance measure; training scores are stochastic rolling-game metrics. The common protocol, single-seed limitations and diagnostic definitions are in the [main report](../../README.md) and [methods](methods.md).", "", "The 32 histories are all included. C/D's `crashed` status is retained; no failure cause is invented. Best evals are retrospective diagnostics. Last-four means describe each run's own tail, not a common training budget.", ""]
+catalog = ["# Per-run experiment catalog", "", "Snapshot downloaded 2026-11-09. Each section identifies the actual logged config, shows both evaluation and training scores, and states the supported interpretation. All runs use seed 42. Raw eval means are the primary performance measure; training scores are stochastic rolling-game metrics. The common protocol, single-seed limitations and diagnostic definitions are in the [main report](../../README.md) and [methods](methods.md).", "", "The current catalog covers 31 runs. One retired architecture run remains in the 32-run data archive but is omitted from this report. C/D's `crashed` status is retained; no failure cause is invented. Best evals are retrospective diagnostics. Last-four means describe each run's own tail, not a common training budget.", ""]
 for row in results.itertuples(index=False):
+    if row.run_id == "tinpghgt":
+        continue  # Retired architecture; retain unmodified archived data.
     config = configs[row.run_id]["config"]
-    catalog += [f"## {row.study} {row.variant} — `{row.run_id}`", "", f"[Open W&B run]({row.url}) · actual version **`{row.model_version}`** · **{row.end_reason}**.", "", f"**Experiment:** b={row.batch_size:,}, R={row.rollout_samples:,}, {row.num_envs:,} environments × {row.rollout_steps} steps, {row.epochs} PPO epoch(s), LR={row.learning_rate:g}, device `{row.device}`, hidden readout {config['model']['hidden_size']}.", "", f"Observed logged training time: **{row.logged_wall_time_seconds/3600:.2f} h**; optimizer steps: **{row.optimizer_steps_total:,}**. Job times are not matched hardware benchmarks.", ""]
+    display_variant = "B" if row.study == "E004" and row.variant == "B-v7" else row.variant
+    catalog += [f"## {row.study} {display_variant} — `{row.run_id}`", "", f"[Open W&B run]({row.url}) · actual version **`{row.model_version}`** · **{row.end_reason}**.", "", f"**Experiment:** b={row.batch_size:,}, R={row.rollout_samples:,}, {row.num_envs:,} environments × {row.rollout_steps} steps, {row.epochs} PPO epoch(s), LR={row.learning_rate:g}, device `{row.device}`, hidden readout {config['model']['hidden_size']}.", "", f"Observed logged training time: **{row.logged_wall_time_seconds/3600:.2f} h**; optimizer steps: **{row.optimizer_steps_total:,}**. Job times are not matched hardware benchmarks.", ""]
     if row.study == "E003":
         catalog += [f"Initialized from `{config['training']['init_checkpoint']}` after {millions(row.pretrained_samples)}M prefix samples; weights-only loading resets Adam. Training can add up to 1,200M samples, subject to eval early stopping.", ""]
     if row.study == "E004" and row.variant == "D":
@@ -102,7 +104,7 @@ methods = f"""# Sources, calculations and validation
 
 ## Coverage and source
 
-The read-only export covers all **{len(results)} runs** returned by `xlz1014361885-tokyo/ppo-snake`, with **{sum(r['history_rows'] for r in inventory['runs']):,} history rows**. Export completion: **{inventory['export_finished_at_utc']}**. There are no failed metric exports. This is a time-bounded snapshot, not a live dashboard. Run configs/summary/history were retrieved together; interrupted runs are not completed by extrapolation.
+The read-only export covers all **{len(results)} runs** returned by `xlz1014361885-tokyo/ppo-snake`, with **{sum(r['history_rows'] for r in inventory['runs']):,} history rows**. Export completion: **{inventory['export_finished_at_utc']}**. There are no failed metric exports. The current README and catalog show 31 runs; the retired architecture run `tinpghgt` is retained only in the original data archive. This is a time-bounded snapshot, not a live dashboard. Run configs/summary/history were retrieved together; interrupted runs are not completed by extrapolation.
 
 The [inventory](data/inventory.json) retains run URLs, states, row counts, per-run export timestamps and history SHA-256 hashes. [run_configs.json](data/run_configs.json) contains the actual W&B configurations. Local full archives and summaries remain in `analysis/wandb/raw/<run_id>/`; they are Git-ignored, while the report's portable derived evidence is retained here. No model checkpoints were downloaded. Attempts to obtain `output.log` for the two crashed runs returned 404, so no crash cause is established.
 
@@ -163,4 +165,4 @@ No network configuration, W&B run, training configuration, checkpoint, or model 
 (ROOT / "README.md").write_text(root_report, encoding="utf-8")
 (ROOT / "docs/analysis/run-catalog.md").write_text("\n".join(catalog), encoding="utf-8")
 (ROOT / "docs/analysis/methods.md").write_text(methods, encoding="utf-8")
-print(f"Wrote README, methods and catalog for {len(results)} runs")
+print(f"Wrote README and catalog for {len(results)-1} current runs; preserved {len(results)} archived runs")

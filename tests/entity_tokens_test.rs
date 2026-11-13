@@ -84,21 +84,19 @@ fn entity_layout_encodes_exclusive_occupancy_release_and_context_without_padding
 }
 
 #[test]
-fn topology_keeps_separate_regions_and_shares_defined_summaries_with_base_version() {
+fn topology_keeps_separate_regions_and_is_shared_by_small_and_base() {
     let env = divided_board();
     let rich = config("transformer_v1_base")
         .model
         .version
         .feature_encoding()
         .encode(&env);
-    let base = config("transformer_v5")
+    let base = config("transformer_v1_small")
         .model
         .version
         .feature_encoding()
         .encode(&env);
-    assert_eq!(base.len(), 1853); // 60*30+53
-    assert_eq!(&base[..1800], &rich[..1800]);
-    assert_eq!(&base[1800..], &rich[1980..]);
+    assert_eq!(base, rich);
     let at = |c: usize, x: usize, y: usize| rich[c * 30 + y * 6 + x];
     close(at(60, 0, 0), 10.0 / 30.0);
     close(at(60, 5, 0), 15.0 / 30.0);
@@ -183,7 +181,7 @@ fn terminal_single_row_features_are_finite_and_growth_holds_tail() {
 #[test]
 fn entity_models_train_all_input_mlps_evaluate_and_reload() {
     tch::set_num_threads(1);
-    for version in ["transformer_v5", "transformer_v1_base"] {
+    for version in ["transformer_v1_base"] {
         let cfg = config(version);
         let store = nn::VarStore::new(Device::Cpu);
         let model = ActorCritic::from_config(&store.root(), &cfg);
@@ -344,7 +342,7 @@ fn cuda_entity_models_have_finite_ppo_gradients_and_bf16_attention() {
             return;
         }
     };
-    for version in ["transformer_v5", "transformer_v1_base"] {
+    for version in ["transformer_v1_base"] {
         let cfg = config(version);
         let store = nn::VarStore::new(device);
         let model = ActorCritic::from_config(&store.root(), &cfg);
