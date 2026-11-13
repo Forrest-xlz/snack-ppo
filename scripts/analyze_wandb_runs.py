@@ -251,6 +251,16 @@ def main():
         ax.legend(fontsize=9)
     save(fig, "e002_epochs.png", "E002 - Data reuse across PPO epochs")
 
+    fig, axes = plt.subplots(1, 3, figsize=(14.2, 4.8), sharey=True)
+    for ax, key in zip(axes, "ABC"):
+        for j, epoch in enumerate([1, 2, 4, 8]):
+            r = baselines[key] if epoch == 1 else lookup[("E002", f"{key}-ep{epoch}")]
+            score_line(ax, r, f"epochs={epoch}", EPOCH_COLORS[epoch], STYLES[j])
+        axes_style(ax, f"{key}: b={baselines[key]['config']['ppo']['batch_size']:,}", xmax=200)
+        ax.set_xticks([0, 50, 100, 150, 200])
+        ax.legend(fontsize=9)
+    save(fig, "e002_early_learning.png", "E002 - Initial learning speed", "Raw evaluation scores during the first 200M environment samples. The complete trajectories are shown separately.")
+
     collapse = lookup[("E002", "A-ep2")]
     fig, axes = plt.subplots(2, 3, figsize=(14.2, 8.1))
     collapse_metrics = [(EVAL, "Eval mean score"), (TRAIN, "Training rolling mean score"), ("train_samples/entropy", "Policy entropy"), ("train_samples/policy_approx_kl", "PPO approximate KL"), ("train_samples/raw_adv_std", "Raw advantage std"), ("train_samples/critic_explained_variance", "Critic explained variance")]

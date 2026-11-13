@@ -2,13 +2,35 @@
   "scripts": [
     "export_wandb_runs.py",
     "analyze_wandb_runs.py",
-    "build_experiment_readme.py"
+    "build_experiment_readme.py",
+    "readme_sections.py"
   ],
   "missing_links": [],
-  "image_count": 43,
+  "image_count": 44,
   "run_count": 32,
   "independent_numeric_checks": 160,
-  "ema_hand_check": "[0,10,0] at [0,25M,50M] -> [0,5,2.5]",
   "continuous_history_rows": 26717,
-  "visual_review": "Inspected representative E001/E002/E003/E004 comparison figures, diagnostics and a per-run chart; all 43 PNGs decoded."
+  "feature_dimensions": {
+    "Cell": 66,
+    "Snake": 21,
+    "Food": 24,
+    "Global": 8
+  },
+  "mermaid_diagrams": 9,
+  "group_structure": [
+    "Experiment contents",
+    "Key configuration",
+    "Model architecture",
+    "Results",
+    "Analysis",
+    "Conclusion"
+  ],
+  "parameter_counts": {
+    "MLP": 177925,
+    "CNN": 172581,
+    "Grid v3": 31781,
+    "Entity small": 18533,
+    "Entity base": 56357
+  },
+  "visual_review": "Existing comparison figures retained. New early-epoch chart inspected at full size; all 44 PNGs decoded. Architecture diagrams checked against model.rs, transformer.rs and entity_transformer.rs."
 }

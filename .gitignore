@@ -4,3 +4,4 @@
 /wandb/
 *.tmp
 /analysis/wandb/raw/
+__pycache__/
